@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Log Doctor",
+        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base and (optionally) a live GitHub search, and reports what it finds. It never changes your configuration.",
+        "data": {
+          "log_path": "Log file path",
+          "scan_time": "Daily scan time",
+          "min_severity": "Minimum severity to report",
+          "lookback_hours": "Lookback window on first scan (hours)",
+          "enable_github_lookup": "Look up unmatched issues on GitHub",
+          "github_token": "GitHub personal access token (optional, raises rate limits)",
+          "max_github_queries": "Max GitHub searches per scan",
+          "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Log Doctor is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Log Doctor settings",
+        "data": {
+          "log_path": "Log file path",
+          "scan_time": "Daily scan time",
+          "min_severity": "Minimum severity to report",
+          "lookback_hours": "Lookback window on first scan (hours)",
+          "enable_github_lookup": "Look up unmatched issues on GitHub",
+          "github_token": "GitHub personal access token (optional, raises rate limits)",
+          "max_github_queries": "Max GitHub searches per scan",
+          "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional"
+        }
+      }
+    }
+  }
+}

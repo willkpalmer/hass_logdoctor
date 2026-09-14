@@ -1,0 +1,11 @@
+scan_now:
+  name: Scan now
+  description: >-
+    Immediately scan the Home Assistant log for anomalies, outside of the
+    daily schedule. Only reports findings - never changes any configuration.
+
+clear_history:
+  name: Clear history
+  description: >-
+    Forget which anomalies have already been reported and clear the cached
+    GitHub lookups. The next scan will treat everything it finds as new.

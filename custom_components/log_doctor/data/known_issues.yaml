@@ -1,0 +1,143 @@
+# Built-in knowledge base of common Home Assistant log anomalies.
+#
+# Each entry is matched (case-insensitive, re.search) against the normalized
+# first line of a log message. The first matching entry wins. These are
+# meant as a fast local shortcut for very common, well-known issues; anything
+# that doesn't match falls through to a live GitHub search instead.
+#
+# Fields:
+#   id:          stable short id
+#   pattern:     regex tested against "<logger>: <message>"
+#   title:       short human-readable title
+#   explanation: what this generally means
+#   fix:         suggested next step(s) - informational only, never applied
+#   doc_url:     optional link to relevant Home Assistant documentation
+
+- id: database_locked
+  pattern: "database is locked"
+  title: "Recorder database is locked"
+  explanation: >
+    The recorder (history/logbook database) is being written to from more
+    than one place at once, or a very slow disk can't keep up with the
+    write rate. Common on SD cards or network shares.
+  fix: >
+    Move the database to a faster local disk (SSD), reduce recorder
+    history/purge_keep_days, or exclude noisy/high-frequency entities from
+    the recorder.
+  doc_url: "https://www.home-assistant.io/integrations/recorder/"
+
+- id: blocking_call
+  pattern: "detected blocking call"
+  title: "Blocking call inside the event loop"
+  explanation: >
+    An integration performed a slow, blocking operation (e.g. file or
+    network I/O) directly on the event loop, which can freeze the whole
+    Home Assistant core for a moment.
+  fix: >
+    Usually a bug in the named integration/custom component. Check for an
+    updated version, and if it persists, report it upstream with the full
+    traceback.
+  doc_url: "https://developers.home-assistant.io/docs/asyncio_blocking_operations/"
+
+- id: setup_retry
+  pattern: "(setup of platform|integration not ready|will retry)"
+  title: "Integration setup is retrying"
+  explanation: >
+    A device or cloud service the integration depends on wasn't reachable
+    during startup, so Home Assistant will retry automatically.
+  fix: >
+    Usually resolves itself once the device/service comes back online.
+    Persistent failures point at a network, credential, or firmware issue
+    with the underlying device/service.
+
+- id: took_too_long
+  pattern: "(took longer than|update of .* is taking over)"
+  title: "Slow update / platform taking too long"
+  explanation: >
+    A sensor or platform is responding slower than Home Assistant expects,
+    which can delay the whole update cycle for that integration.
+  fix: >
+    Increase the integration's scan interval if configurable, check the
+    underlying device/network for latency, or look for an integration
+    update that addresses performance.
+
+- id: ssl_verify_failed
+  pattern: "certificate_verify_failed|ssl: certificate_verify_failed"
+  title: "SSL certificate verification failed"
+  explanation: >
+    Home Assistant couldn't verify the TLS certificate of a remote service
+    - often caused by an expired certificate, a self-signed certificate, or
+    an out-of-date CA bundle.
+  fix: >
+    Check the remote service's certificate validity, or if self-signed,
+    check whether the integration exposes a "verify SSL" option.
+
+- id: deprecated_yaml
+  pattern: "(is deprecated|deprecated and will be removed|configuration.*deprecat)"
+  title: "Deprecated configuration in use"
+  explanation: >
+    A YAML configuration option, service, or integration behavior used in
+    this setup is deprecated and scheduled for removal in a future release.
+  fix: >
+    Migrate the flagged configuration to the replacement described in the
+    message before the next major release.
+
+- id: template_error
+  pattern: "error rendering|template error"
+  title: "Template rendering error"
+  explanation: >
+    A Jinja2 template (in an automation, script, sensor, or dashboard)
+    raised an error, often due to a missing/undefined entity or attribute.
+  fix: >
+    Check the referenced entity/attribute exists and guard templates with
+    default filters (e.g. `| default(0)`).
+  doc_url: "https://www.home-assistant.io/docs/configuration/templating/"
+
+- id: mqtt_connection_lost
+  pattern: "mqtt.*(connection lost|disconnected|failed to connect)"
+  title: "MQTT connection issue"
+  explanation: >
+    Home Assistant lost or failed to establish its connection to the MQTT
+    broker.
+  fix: >
+    Check the MQTT broker is reachable and its credentials are still valid;
+    check broker logs for the client being kicked/rejected.
+
+- id: zwave_zigbee_network
+  pattern: "(zwave|zigbee).*(network|radio).*(error|fail|down)"
+  title: "Z-Wave / Zigbee radio or network issue"
+  explanation: >
+    The Z-Wave or Zigbee radio/coordinator reported a network-level
+    problem, which can affect all devices on that mesh.
+  fix: >
+    Check the USB/network connection to the radio, and consider a network
+    heal if devices are consistently unreachable.
+
+- id: unavailable_timeout
+  pattern: "(timeout|timed out).*(connecting|response|request)"
+  title: "Device/service timed out"
+  explanation: >
+    A request to a device or cloud API didn't get a response in time.
+  fix: >
+    Usually transient (Wi-Fi/network congestion, device rebooting, cloud
+    outage). If persistent, check the device's network connectivity.
+
+- id: recorder_purge
+  pattern: "(error purging|error during purge|recorder.*purge.*error)"
+  title: "Recorder purge error"
+  explanation: >
+    Home Assistant's periodic cleanup of old history data failed.
+  fix: >
+    Check available disk space and database health; a corrupt database may
+    need to be repaired or recreated.
+  doc_url: "https://www.home-assistant.io/integrations/recorder/"
+
+- id: config_entry_auth_failed
+  pattern: "(invalid auth|authentication failed|token.*expired|reauth)"
+  title: "Authentication failure"
+  explanation: >
+    An integration's stored credentials/token were rejected by the
+    device/cloud service.
+  fix: >
+    Re-authenticate the integration from Settings > Devices & Services (a
+    "reconfigure" / "reauth" prompt is usually shown there).

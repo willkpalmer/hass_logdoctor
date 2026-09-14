@@ -1,0 +1,12 @@
+{
+  "domain": "log_doctor",
+  "name": "Log Doctor",
+  "codeowners": ["@willkpalmer"],
+  "config_flow": true,
+  "documentation": "https://github.com/willkpalmer/hass_logreview",
+  "issue_tracker": "https://github.com/willkpalmer/hass_logreview/issues",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

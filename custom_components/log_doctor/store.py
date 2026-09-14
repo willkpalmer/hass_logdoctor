@@ -1,0 +1,120 @@
+"""Persisted state for Log Doctor: last scan time, seen signatures, GitHub cache."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
+
+from .const import STORAGE_VERSION
+from .github_lookup import GitHubLookupResult
+
+
+@dataclass
+class SeenSignature:
+    """Bookkeeping for a signature we've already reported before."""
+
+    first_reported: datetime
+    last_seen: datetime
+    times_reported: int = 1
+
+
+@dataclass
+class LogDoctorData:
+    """In-memory representation of the persisted store."""
+
+    last_scan: datetime | None = None
+    seen_signatures: dict[str, SeenSignature] = field(default_factory=dict)
+    github_cache: dict[str, GitHubLookupResult] = field(default_factory=dict)
+
+
+class LogDoctorStore:
+    """Wrapper around a Home Assistant Store for Log Doctor's persisted state."""
+
+    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        self._store: Store = Store(hass, STORAGE_VERSION, f"log_doctor.{entry_id}")
+        self.data = LogDoctorData()
+
+    async def async_load(self) -> None:
+        raw = await self._store.async_load()
+        if not raw:
+            return
+
+        last_scan = raw.get("last_scan")
+        self.data.last_scan = datetime.fromisoformat(last_scan) if last_scan else None
+
+        self.data.seen_signatures = {
+            sig: SeenSignature(
+                first_reported=datetime.fromisoformat(v["first_reported"]),
+                last_seen=datetime.fromisoformat(v["last_seen"]),
+                times_reported=v.get("times_reported", 1),
+            )
+            for sig, v in raw.get("seen_signatures", {}).items()
+        }
+        self.data.github_cache = {
+            sig: GitHubLookupResult.from_dict(v)
+            for sig, v in raw.get("github_cache", {}).items()
+        }
+
+    async def async_save(self) -> None:
+        await self._store.async_save(
+            {
+                "last_scan": self.data.last_scan.isoformat() if self.data.last_scan else None,
+                "seen_signatures": {
+                    sig: {
+                        "first_reported": s.first_reported.isoformat(),
+                        "last_seen": s.last_seen.isoformat(),
+                        "times_reported": s.times_reported,
+                    }
+                    for sig, s in self.data.seen_signatures.items()
+                },
+                "github_cache": {
+                    sig: result.as_dict() for sig, result in self.data.github_cache.items()
+                },
+            }
+        )
+
+    async def async_clear_history(self) -> None:
+        self.data = LogDoctorData()
+        await self.async_save()
+
+    def get_cached_github_result(
+        self, signature: str, max_age: timedelta
+    ) -> GitHubLookupResult | None:
+        result = self.data.github_cache.get(signature)
+        if result is None:
+            return None
+        if datetime.now(timezone.utc) - result.fetched_at > max_age:
+            return None
+        return result
+
+    def store_github_result(self, signature: str, result: GitHubLookupResult) -> None:
+        self.data.github_cache[signature] = result
+
+    def mark_signature_seen(self, signature: str, when: datetime) -> bool:
+        """Record a signature as seen; return True if this is the first time ever."""
+        existing = self.data.seen_signatures.get(signature)
+        if existing is None:
+            self.data.seen_signatures[signature] = SeenSignature(
+                first_reported=when, last_seen=when
+            )
+            return True
+        existing.last_seen = when
+        existing.times_reported += 1
+        return False
+
+    def prune(self, max_age: timedelta) -> None:
+        """Drop signatures not seen in a long time, to bound storage size.
+
+        Log entry timestamps (and therefore `last_seen`) are naive,
+        local-time values as written by Home Assistant's log formatter, so
+        "now" here is deliberately naive too rather than UTC-aware.
+        """
+        now = datetime.now()
+        self.data.seen_signatures = {
+            sig: s
+            for sig, s in self.data.seen_signatures.items()
+            if now - s.last_seen < max_age
+        }
