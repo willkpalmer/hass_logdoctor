@@ -22,6 +22,7 @@ from .digest import (
     ScanResult,
     build_markdown_digest,
     build_mobile_summary,
+    build_notification_digest,
 )
 from .github_lookup import GitHubLookupClient
 from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
@@ -173,9 +174,9 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
     async def _async_notify(self, result: ScanResult) -> None:
         title = f"Log Doctor Report - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
-        message = result.report_markdown
+        message = build_notification_digest(result)
         if result.report_file:
-            message += f"\n\n_Full copy retained at `{result.report_file}`._"
+            message += f"\n\n_Full report retained at `{result.report_file}`._"
 
         await self.hass.services.async_call(
             "persistent_notification",

@@ -41,15 +41,18 @@ context, but every action it takes is a report, never a change.
    always states what log file was read, the time window covered, how many
    lines/entries were checked, and how many were matched against the
    knowledge base or GitHub, so a clean run is evidence of a real check
-   rather than a blank "no errors" message. The report is:
-   - Posted as a persistent notification in Home Assistant (Settings bell
-     icon), rebuilt each scan.
-   - Written to disk as a Markdown file, one per run, so it survives past
-     the notification being dismissed or overwritten by the next scan (see
-     [Retained reports](#retained-reports) below).
-   - Exposed on `sensor.log_doctor_anomalies` as attributes, for your own
-     dashboards/automations.
-   - Optionally, sent as a push notification via any `notify.*` mobile app
+   rather than a blank "no errors" message. It reaches you as:
+   - A **persistent notification** in Home Assistant (Settings bell icon),
+     rebuilt each scan - kept short on purpose: the scan summary, plus just
+     the totals of new vs. still-occurring anomalies (e.g. "New anomalies:
+     2", "Still occurring: 1"), not a write-up of every single one.
+   - The **full** report - every anomaly's message, known fix, and GitHub
+     matches - written to disk as a Markdown file each run, so it survives
+     past the notification being dismissed or overwritten by the next scan
+     (see [Retained reports](#retained-reports) below), and exposed in full
+     on `sensor.log_doctor_anomalies`'s attributes for dashboards/
+     automations.
+   - Optionally, a short push notification via any `notify.*` mobile app
      service.
 
 ## Installation

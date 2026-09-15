@@ -195,6 +195,34 @@ def build_markdown_digest(result: ScanResult) -> str:
     return "\n\n".join(parts)
 
 
+def build_notification_digest(result: ScanResult) -> str:
+    """Short-form digest for the persistent notification.
+
+    Keeps the full "what was checked" scan summary, but shows only totals
+    for new vs. still-occurring anomalies rather than writing each one out
+    - that per-anomaly detail (message, known fix, GitHub matches) still
+    lives in full in the retained report file and on
+    sensor.log_doctor_anomalies's attributes.
+    """
+    parts: list[str] = [build_summary_section(result)]
+
+    if not result.reports:
+        parts.append("### ✅ No anomalies found")
+    else:
+        parts.append(f"### 🆕 New anomalies: {len(result.new_reports)}")
+        parts.append(f"### 🔁 Still occurring: {len(result.recurring_reports)}")
+        parts.append(
+            "_Details for each one are in the full report and on "
+            "`sensor.log_doctor_anomalies`._"
+        )
+
+    parts.append(
+        "\n_Log Doctor only reports issues - it never changes your "
+        "configuration or applies fixes automatically._"
+    )
+    return "\n\n".join(parts)
+
+
 def build_mobile_summary(result: ScanResult) -> tuple[str, str]:
     """Build a short (title, message) pair suitable for a mobile push notification."""
     if not result.reports:
