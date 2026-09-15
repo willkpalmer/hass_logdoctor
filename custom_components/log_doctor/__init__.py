@@ -21,10 +21,12 @@ from .const import (
     CONF_MAX_GITHUB_QUERIES,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
+    CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_MIN_SEVERITY,
+    DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
     DOMAIN,
@@ -68,6 +70,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         github_token=github_token,
         max_github_queries=options.get(CONF_MAX_GITHUB_QUERIES, DEFAULT_MAX_GITHUB_QUERIES),
         mobile_notify_service=mobile_notify,
+        report_retention_days=options.get(
+            CONF_REPORT_RETENTION_DAYS, DEFAULT_REPORT_RETENTION_DAYS
+        ),
         store=store,
     )
 

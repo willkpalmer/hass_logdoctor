@@ -13,10 +13,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTR_ANOMALIES,
+    ATTR_LAST_REPORT,
     ATTR_LAST_SCAN,
     ATTR_NEW_COUNT,
     ATTR_RECURRING_COUNT,
+    ATTR_REPORT_FILE,
+    ATTR_REPORTS_DIR,
     DOMAIN,
+    MAX_REPORT_ATTR_CHARS,
+    REPORTS_DIR_NAME,
 )
 from .coordinator import LogDoctorCoordinator
 from .digest import ScanResult
@@ -61,10 +66,21 @@ class LogDoctorAnomalySensor(CoordinatorEntity[LogDoctorCoordinator], SensorEnti
         if result is None:
             return {}
         anomalies = [r.as_attr_dict() for r in result.reports[:_MAX_ATTR_ANOMALIES]]
+        report_text = result.report_markdown
+        truncated = len(report_text) > MAX_REPORT_ATTR_CHARS
+        if truncated:
+            report_text = report_text[:MAX_REPORT_ATTR_CHARS] + "\n\n… (truncated, see report_file for the full report)"
         return {
             ATTR_ANOMALIES: anomalies,
             ATTR_NEW_COUNT: len(result.new_reports),
             ATTR_RECURRING_COUNT: len(result.recurring_reports),
             ATTR_LAST_SCAN: result.scanned_at.isoformat(),
             "lines_scanned": result.lines_scanned,
+            "known_issue_matches": result.known_issue_matches,
+            "github_checked": result.github_checked,
+            "github_found": result.github_found,
+            "github_skipped": result.github_skipped,
+            ATTR_LAST_REPORT: report_text,
+            ATTR_REPORT_FILE: result.report_file,
+            ATTR_REPORTS_DIR: self.coordinator.hass.config.path(REPORTS_DIR_NAME),
         }

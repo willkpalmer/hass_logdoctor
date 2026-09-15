@@ -52,9 +52,13 @@ class ScanResult:
     """The full outcome of one scan run."""
 
     scanned_at: datetime
+    log_path: str = ""
+    since: datetime | None = None
     reports: list[AnomalyReport] = field(default_factory=list)
     lines_scanned: int = 0
     error: str | None = None
+    report_markdown: str = ""
+    report_file: str | None = None
 
     @property
     def new_reports(self) -> list[AnomalyReport]:
@@ -63,6 +67,29 @@ class ScanResult:
     @property
     def recurring_reports(self) -> list[AnomalyReport]:
         return [r for r in self.reports if not r.is_new]
+
+    @property
+    def total_occurrences(self) -> int:
+        """Total matching log lines across all anomaly groups (pre-dedup)."""
+        return sum(r.group.count for r in self.reports)
+
+    @property
+    def known_issue_matches(self) -> int:
+        return sum(1 for r in self.reports if r.known_issue is not None)
+
+    @property
+    def github_checked(self) -> int:
+        return sum(1 for r in self.reports if r.github_result is not None)
+
+    @property
+    def github_found(self) -> int:
+        return sum(
+            1 for r in self.reports if r.github_result and r.github_result.matches
+        )
+
+    @property
+    def github_skipped(self) -> int:
+        return sum(1 for r in self.reports if r.github_result and r.github_result.error)
 
 
 def _format_report_line(report: AnomalyReport) -> str:
@@ -88,21 +115,49 @@ def _format_report_line(report: AnomalyReport) -> str:
     return "\n".join(lines)
 
 
-def build_markdown_digest(result: ScanResult) -> str:
-    """Build the full markdown digest shown in the persistent notification."""
-    if not result.reports:
-        return (
-            f"No warnings or errors found in the Home Assistant log "
-            f"as of {result.scanned_at.strftime('%Y-%m-%d %H:%M')}. ✅"
-        )
+def _format_since(since: datetime | None) -> str:
+    return since.strftime("%Y-%m-%d %H:%M") if since else "(beginning of retained log)"
 
-    parts: list[str] = []
-    if result.new_reports:
-        parts.append(f"### 🆕 New anomalies ({len(result.new_reports)})")
-        parts.extend(_format_report_line(r) for r in result.new_reports)
-    if result.recurring_reports:
-        parts.append(f"### 🔁 Still occurring ({len(result.recurring_reports)})")
-        parts.extend(_format_report_line(r) for r in result.recurring_reports)
+
+def build_summary_section(result: ScanResult) -> str:
+    """Build the "what did Log Doctor actually check" section.
+
+    Always included, even (especially) when nothing was found, so a clean
+    run is evidence of a real check rather than an empty message.
+    """
+    distinct = len(result.reports)
+    lines = [
+        "## 🩺 Scan summary",
+        f"- Log file: `{result.log_path}`",
+        f"- Window checked: {_format_since(result.since)} → {result.scanned_at.strftime('%Y-%m-%d %H:%M')}",
+        f"- Log lines read: {result.lines_scanned}",
+        f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
+        f"- Matched to built-in knowledge base: {result.known_issue_matches}",
+    ]
+    if result.github_checked:
+        lines.append(
+            f"- Checked on GitHub: {result.github_checked} "
+            f"({result.github_found} with related issues found, "
+            f"{result.github_skipped} skipped/rate-limited)"
+        )
+    else:
+        lines.append("- Checked on GitHub: 0 (disabled, or nothing needed a lookup)")
+    return "\n".join(lines)
+
+
+def build_markdown_digest(result: ScanResult) -> str:
+    """Build the full markdown digest: always a full report, never just a status line."""
+    parts: list[str] = [build_summary_section(result)]
+
+    if not result.reports:
+        parts.append("### ✅ No anomalies found\nEverything in the window above looked clean.")
+    else:
+        if result.new_reports:
+            parts.append(f"### 🆕 New anomalies ({len(result.new_reports)})")
+            parts.extend(_format_report_line(r) for r in result.new_reports)
+        if result.recurring_reports:
+            parts.append(f"### 🔁 Still occurring ({len(result.recurring_reports)})")
+            parts.extend(_format_report_line(r) for r in result.recurring_reports)
 
     parts.append(
         "\n_Log Doctor only reports issues - it never changes your "
@@ -114,7 +169,10 @@ def build_markdown_digest(result: ScanResult) -> str:
 def build_mobile_summary(result: ScanResult) -> tuple[str, str]:
     """Build a short (title, message) pair suitable for a mobile push notification."""
     if not result.reports:
-        return ("Log Doctor: all clear", "No new warnings or errors found today.")
+        return (
+            "Log Doctor: all clear",
+            f"Checked {result.lines_scanned} log lines, nothing found.",
+        )
 
     total = len(result.reports)
     new = len(result.new_reports)

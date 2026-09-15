@@ -28,10 +28,12 @@ from .const import (
     CONF_MAX_GITHUB_QUERIES,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
+    CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_MIN_SEVERITY,
+    DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
     DOMAIN,
@@ -80,6 +82,14 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 CONF_MOBILE_NOTIFY_SERVICE,
                 default=defaults.get(CONF_MOBILE_NOTIFY_SERVICE, ""),
             ): TextSelector(),
+            vol.Required(
+                CONF_REPORT_RETENTION_DAYS,
+                default=defaults.get(
+                    CONF_REPORT_RETENTION_DAYS, DEFAULT_REPORT_RETENTION_DAYS
+                ),
+            ): NumberSelector(
+                NumberSelectorConfig(min=1, max=365, step=1, mode=NumberSelectorMode.BOX)
+            ),
         }
     )
 

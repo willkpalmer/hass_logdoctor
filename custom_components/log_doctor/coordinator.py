@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     DEFAULT_GITHUB_CACHE_DAYS,
     DEFAULT_MAX_GITHUB_QUERIES,
+    DEFAULT_REPORT_RETENTION_DAYS,
     DOMAIN,
     NOTIFICATION_ID,
 )
@@ -18,6 +19,7 @@ from .digest import AnomalyReport, ScanResult, build_markdown_digest, build_mobi
 from .github_lookup import GitHubLookupClient
 from .knowledge_base import match_known_issue
 from .log_parser import filter_and_group, parse_log_lines
+from .report_files import async_write_report
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         github_token: str | None,
         max_github_queries: int,
         mobile_notify_service: str | None,
+        report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS,
         store: LogDoctorStore,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
@@ -52,6 +55,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.github_token = github_token
         self.max_github_queries = max_github_queries
         self.mobile_notify_service = mobile_notify_service
+        self.report_retention_days = report_retention_days
         self.store = store
 
     async def _async_update_data(self) -> ScanResult:
@@ -110,7 +114,17 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             reverse=True,
         )
 
-        result = ScanResult(scanned_at=now, reports=reports, lines_scanned=len(lines))
+        result = ScanResult(
+            scanned_at=now,
+            log_path=self.log_path,
+            since=since,
+            reports=reports,
+            lines_scanned=len(lines),
+        )
+        result.report_markdown = build_markdown_digest(result)
+        result.report_file = await async_write_report(
+            self.hass, result.report_markdown, now, self.report_retention_days
+        )
 
         self.store.data.last_scan = now
         self.store.prune(_SIGNATURE_RETENTION)
@@ -128,8 +142,10 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             return []
 
     async def _async_notify(self, result: ScanResult) -> None:
-        message = build_markdown_digest(result)
         title = f"Log Doctor Report - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
+        message = result.report_markdown
+        if result.report_file:
+            message += f"\n\n_Full copy retained at `{result.report_file}`._"
 
         await self.hass.services.async_call(
             "persistent_notification",
@@ -138,7 +154,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             blocking=True,
         )
 
-        if self.mobile_notify_service and result.reports:
+        if self.mobile_notify_service:
             mobile_title, mobile_message = build_mobile_summary(result)
             try:
                 await self.hass.services.async_call(

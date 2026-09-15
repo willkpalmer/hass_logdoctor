@@ -27,12 +27,20 @@ context, but every action it takes is a report, never a change.
    `home-assistant/core` for built-in integrations or a best-effort search
    for custom components, so you get links to relevant existing issues and
    their resolution status.
-5. The results are reported to you via:
-   - A persistent notification in Home Assistant (Settings bell icon),
-     rebuilt each scan.
-   - A `sensor.log_doctor_anomalies` entity with the anomaly count and full
-     details as attributes, for your own dashboards/automations.
-   - Optionally, a push notification via any `notify.*` mobile app service.
+5. **Every scan produces a full report, even when nothing is wrong** — it
+   always states what log file was read, the time window covered, how many
+   lines/entries were checked, and how many were matched against the
+   knowledge base or GitHub, so a clean run is evidence of a real check
+   rather than a blank "no errors" message. The report is:
+   - Posted as a persistent notification in Home Assistant (Settings bell
+     icon), rebuilt each scan.
+   - Written to disk as a Markdown file, one per run, so it survives past
+     the notification being dismissed or overwritten by the next scan (see
+     [Retained reports](#retained-reports) below).
+   - Exposed on `sensor.log_doctor_anomalies` as attributes, for your own
+     dashboards/automations.
+   - Optionally, sent as a push notification via any `notify.*` mobile app
+     service.
 
 ## Installation
 
@@ -40,8 +48,7 @@ context, but every action it takes is a report, never a change.
 
 1. In HACS, go to the three-dot menu → **Custom repositories**.
 2. Add `https://github.com/willkpalmer/hass_logreview` as category
-   **Integration**. (This repo is private — HACS needs a GitHub token with
-   access configured in its own settings to install from it.)
+   **Integration**.
 3. Install **Log Doctor**, then restart Home Assistant.
 
 ### Manual
@@ -66,15 +73,29 @@ context, but every action it takes is a report, never a change.
      searches one scan can make.
    - **Mobile notify service** — e.g. `mobile_app_pixel_10_pro_xl`, to also
      get a push notification summary. Leave blank to skip.
+   - **Report retention** — how many days of past report files to keep on
+     disk before they're pruned.
 
 All of these can be changed later from the integration's **Configure**
 button.
+
+## Retained reports
+
+Every scan writes its full Markdown report to
+`<config>/log_doctor_reports/` — one timestamped file per run
+(`log_doctor_report_2026-09-15_080000.md`), plus a `latest.md` that always
+mirrors the most recent one. This is what survives after the persistent
+notification is dismissed or gets overwritten by tomorrow's scan: open the
+folder with the Studio Code Server / File editor add-on, Samba, or SSH to
+see the full history, including every "nothing found" run and exactly what
+was checked. Files older than the configured retention window (default 30
+days) are pruned automatically; `latest.md` is never pruned.
 
 ## Entities
 
 | Entity | Description |
 | --- | --- |
-| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full list (message, count, level, known fix or GitHub matches, first/last seen). |
+| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full anomaly list (message, count, level, known fix or GitHub matches, first/last seen), scan stats (lines read, matches, GitHub checks), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
 | `button.log_doctor_scan_now` | Triggers an immediate scan outside the daily schedule. |
 
 ## Services
