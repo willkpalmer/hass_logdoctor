@@ -105,6 +105,22 @@ days) are pruned automatically; `latest.md` is never pruned.
   reported (and cached GitHub results), so the next scan reports
   everything as new.
 
+## Releasing updates (for maintainers)
+
+HACS tracks updates for this integration via GitHub Releases, not just
+commits to `main` — it compares the latest release tag against the
+`version` in the installed `manifest.json` to decide whether to show an
+update. Each time a change should be installable as an update:
+
+1. Bump `"version"` in `custom_components/log_doctor/manifest.json`
+   (semantic versioning, e.g. `0.2.0` → `0.3.0`).
+2. Push to `main`.
+3. Cut a release: `gh release create v0.3.0 --title "v0.3.0" --notes "..."`
+   (tag must match the manifest version, with a `v` prefix).
+
+Without a release, HACS still sees the repository but has nothing to
+compare against, so it won't surface a clean "update available".
+
 ## Why "report only"
 
 Automatically "fixing" a Home Assistant issue found in a log is risky:
