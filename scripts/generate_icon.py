@@ -14,7 +14,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-OUTPUT_PATH = Path(__file__).resolve().parent.parent / "icon.png"
+OUTPUT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "custom_components" / "log_doctor" / "brand" / "icon.png"
+)
 
 SIZE = 512
 S = SIZE  # shorthand
