@@ -109,11 +109,13 @@ end).
 A couple of things are different for these sources compared to
 `home-assistant.log`:
 
-- Each fetch only returns a short, bounded tail of recent log lines (not a
-  full history), so there's no separate "lookback window" for them - Log
-  Doctor just checks the current tail every scan. Repeat entries are still
-  deduped by the same "already reported" tracking as everything else, so
-  you won't get renotified for the same ongoing issue every day.
+- Each fetch only returns a bounded tail of recent log lines (up to the
+  last 1000, via Supervisor's `lines` parameter - its own default without
+  that is just 100), not a full history, so there's no separate "lookback
+  window" for them - Log Doctor just checks the current tail every scan.
+  Repeat entries are still deduped by the same "already reported" tracking
+  as everything else, so you won't get renotified for the same ongoing
+  issue every day.
 - Home Assistant Core's own structured `LEVEL (thread) [logger] message`
   format is only guaranteed for Core and Supervisor (which uses the same
   logger). Host, plugin, and add-on logs can be formatted however that

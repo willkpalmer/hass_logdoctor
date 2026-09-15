@@ -24,6 +24,8 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .const import SUPERVISOR_LOG_LINES
+
 _LOGGER = logging.getLogger(__name__)
 
 # Fixed Supervisor-managed log sources, matching the dropdown on
@@ -53,8 +55,15 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {os.environ.get('SUPERVISOR_TOKEN', '')}"}
 
 
-async def async_fetch_log_text(hass: HomeAssistant, log_path: str) -> str | None:
-    """Fetch plain-text logs for one Supervisor-managed source, e.g. 'host/logs'."""
+async def async_fetch_log_text(
+    hass: HomeAssistant, log_path: str, max_lines: int = SUPERVISOR_LOG_LINES
+) -> str | None:
+    """Fetch plain-text logs for one Supervisor-managed source, e.g. 'host/logs'.
+
+    Supervisor's /logs endpoints default to only the last 100 lines unless a
+    "lines" query parameter is passed - without it, Log Doctor would silently
+    miss anything older than that tiny tail.
+    """
     if not supervisor_available():
         return None
     session = async_get_clientsession(hass)
@@ -62,9 +71,10 @@ async def async_fetch_log_text(hass: HomeAssistant, log_path: str) -> str | None
         async with session.get(
             f"{_base_url()}/{log_path}",
             headers=_headers(),
-            timeout=aiohttp.ClientTimeout(total=20),
+            params={"lines": max_lines},
+            timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
-            if resp.status != 200:
+            if resp.status not in (200, 206):
                 _LOGGER.debug("Log fetch for %s returned HTTP %s", log_path, resp.status)
                 return None
             return await resp.text(errors="replace")

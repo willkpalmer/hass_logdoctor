@@ -27,6 +27,11 @@ CONF_REPORT_RETENTION_DAYS = "report_retention_days"
 CONF_INCLUDE_SUPERVISOR_LOGS = "include_supervisor_logs"
 DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
 
+# Supervisor's /logs endpoints default to only the last 100 lines unless a
+# "lines" query parameter is passed. Max it out for now (Supervisor doesn't
+# enforce an upper bound on this parameter).
+SUPERVISOR_LOG_LINES = 1000
+
 SEVERITY_LEVELS = ["WARNING", "ERROR", "CRITICAL"]
 SEVERITY_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
 
