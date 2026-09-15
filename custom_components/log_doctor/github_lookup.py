@@ -8,7 +8,6 @@ GitHub itself.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -17,17 +16,9 @@ import aiohttp
 
 from .const import GITHUB_API_BASE, GITHUB_CORE_REPO
 from .log_parser import component_from_logger
+from .search_query import keywords_from_message
 
 _LOGGER = logging.getLogger(__name__)
-
-# Strip stack-trace punctuation/paths down to a short, search-friendly
-# phrase - GitHub's search treats long free text poorly.
-_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}")
-_STOPWORDS = {
-    "the", "and", "for", "with", "from", "this", "that", "was", "were",
-    "has", "have", "had", "not", "are", "you", "your", "self", "none",
-    "true", "false", "error", "warning", "exception", "traceback", "line",
-}
 
 
 @dataclass
@@ -70,23 +61,9 @@ class GitHubLookupResult:
         )
 
 
-def _keywords_from_message(message: str, limit: int = 6) -> list[str]:
-    """Pull a handful of distinctive keywords out of a log message."""
-    words = _WORD_RE.findall(message)
-    keywords: list[str] = []
-    for word in words:
-        lower = word.lower()
-        if lower in _STOPWORDS or lower in keywords:
-            continue
-        keywords.append(lower)
-        if len(keywords) >= limit:
-            break
-    return keywords
-
-
 def build_query(logger: str, message: str) -> tuple[str, str | None]:
     """Build a GitHub issue-search query string and an optional repo scope."""
-    keywords = _keywords_from_message(message)
+    keywords = keywords_from_message(message)
     kind, component = component_from_logger(logger)
 
     repo: str | None = None

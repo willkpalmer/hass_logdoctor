@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from .community_lookup import CommunityLookupResult
 from .github_lookup import GitHubLookupResult
+from .ha_docs_lookup import DocsLookupResult
 from .knowledge_base import KnownIssue
 from .log_parser import AnomalyGroup
 
@@ -30,6 +32,8 @@ class AnomalyReport:
     is_new: bool
     known_issue: KnownIssue | None = None
     github_result: GitHubLookupResult | None = None
+    docs_result: DocsLookupResult | None = None
+    community_result: CommunityLookupResult | None = None
 
     @property
     def signature(self) -> str:
@@ -54,6 +58,14 @@ class AnomalyReport:
                 else []
             ),
             "github_search_url": self.github_result.search_url if self.github_result else None,
+            "docs_matches": (
+                [m.__dict__ for m in self.docs_result.matches] if self.docs_result else []
+            ),
+            "community_matches": (
+                [m.__dict__ for m in self.community_result.matches]
+                if self.community_result
+                else []
+            ),
         }
 
 
@@ -102,6 +114,33 @@ class ScanResult:
     def github_skipped(self) -> int:
         return sum(1 for r in self.reports if r.github_result and r.github_result.error)
 
+    @property
+    def docs_checked(self) -> int:
+        return sum(1 for r in self.reports if r.docs_result is not None)
+
+    @property
+    def docs_found(self) -> int:
+        return sum(1 for r in self.reports if r.docs_result and r.docs_result.matches)
+
+    @property
+    def community_checked(self) -> int:
+        return sum(1 for r in self.reports if r.community_result is not None)
+
+    @property
+    def community_found(self) -> int:
+        return sum(
+            1 for r in self.reports if r.community_result and r.community_result.matches
+        )
+
+    @property
+    def community_solved(self) -> int:
+        return sum(
+            1
+            for r in self.reports
+            if r.community_result
+            and any(m.solved for m in r.community_result.matches)
+        )
+
 
 def _format_report_line(report: AnomalyReport) -> str:
     emoji = _LEVEL_EMOJI.get(report.group.level, "•")
@@ -109,20 +148,58 @@ def _format_report_line(report: AnomalyReport) -> str:
         f"{emoji} **{report.group.logger}** ({report.group.level}, x{report.group.count})",
         f"  {report.group.example_message[:220]}",
     ]
+
     if report.known_issue:
         lines.append(f"  📖 *Known issue:* {report.known_issue.title}")
         lines.append(f"     Fix: {report.known_issue.fix}")
         if report.known_issue.doc_url:
             lines.append(f"     Docs: {report.known_issue.doc_url}")
-    elif report.github_result and report.github_result.matches:
-        lines.append("  🔗 Related GitHub issues:")
+        return "\n".join(lines)
+
+    found_anything = False
+
+    if report.docs_result and report.docs_result.matches:
+        found_anything = True
+        lines.append("  📘 Home Assistant docs:")
+        for match in report.docs_result.matches:
+            lines.append(f"     - {match.title}")
+            if match.snippet:
+                lines.append(f'       "{match.snippet}"')
+            lines.append(f"       {match.url}")
+
+    if report.community_result and report.community_result.matches:
+        found_anything = True
+        lines.append("  💬 Community forum:")
+        for match in report.community_result.matches:
+            status = "✅ solved" if match.solved else f"{match.reply_count} replies"
+            lines.append(f"     - [{status}] {match.title}")
+            if match.excerpt:
+                lines.append(f'       "{match.excerpt}"')
+            lines.append(f"       {match.url}")
+
+    if report.github_result and report.github_result.matches:
+        found_anything = True
+        lines.append("  🔗 GitHub issues:")
         for match in report.github_result.matches:
             state = "✅ closed" if match.state == "closed" else "🟢 open"
-            lines.append(f"     - [{state}] {match.title}\n       {match.url}")
-    elif report.github_result and report.github_result.error:
-        lines.append(f"  🔍 GitHub lookup skipped ({report.github_result.error})")
-    elif report.github_result:
-        lines.append(f"  🔍 No matching GitHub issues found. Search: {report.github_result.search_url}")
+            lines.append(f"     - [{state}] {match.title}")
+            lines.append(f"       {match.url}")
+
+    if not found_anything:
+        errors = sorted(
+            {
+                r.error
+                for r in (report.docs_result, report.community_result, report.github_result)
+                if r and r.error
+            }
+        )
+        if errors:
+            lines.append(f"  🔍 External lookups skipped ({', '.join(errors)})")
+        elif report.docs_result or report.community_result or report.github_result:
+            lines.append(
+                "  🔍 No matches found in the knowledge base, docs, community, or GitHub."
+            )
+
     return "\n".join(lines)
 
 
@@ -163,14 +240,24 @@ def build_summary_section(result: ScanResult) -> str:
         f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
         f"- Matched to built-in knowledge base: {result.known_issue_matches}",
     ]
-    if result.github_checked:
+    researched = max(result.docs_checked, result.community_checked, result.github_checked)
+    if researched:
+        lines.append(f"- Researched online for {researched} unmatched anomalies:")
         lines.append(
-            f"- Checked on GitHub: {result.github_checked} "
-            f"({result.github_found} with related issues found, "
-            f"{result.github_skipped} skipped/rate-limited)"
+            f"  - Home Assistant docs: {result.docs_found} with a related page found"
+        )
+        lines.append(
+            f"  - Community forum: {result.community_found} with related discussion "
+            f"found ({result.community_solved} marked solved)"
+        )
+        lines.append(
+            f"  - GitHub: {result.github_found} with related issues found, "
+            f"{result.github_skipped} skipped/rate-limited"
         )
     else:
-        lines.append("- Checked on GitHub: 0 (disabled, or nothing needed a lookup)")
+        lines.append(
+            "- Researched online: nothing needed it (all matched or lookups disabled)"
+        )
     return "\n".join(lines)
 
 
