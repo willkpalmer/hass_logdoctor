@@ -13,6 +13,16 @@ _LEVEL_EMOJI = {"WARNING": "⚠️", "ERROR": "🛑", "CRITICAL": "🔴"}
 
 
 @dataclass
+class LogSourceSummary:
+    """What Log Doctor found when it checked one Supervisor-managed log source."""
+
+    name: str
+    lines_read: int
+    ok: bool
+    note: str = ""
+
+
+@dataclass
 class AnomalyReport:
     """Everything Log Doctor found out about a single anomaly group."""
 
@@ -59,6 +69,7 @@ class ScanResult:
     error: str | None = None
     report_markdown: str = ""
     report_file: str | None = None
+    sources_checked: list[LogSourceSummary] = field(default_factory=list)
 
     @property
     def new_reports(self) -> list[AnomalyReport]:
@@ -119,6 +130,10 @@ def _format_since(since: datetime | None) -> str:
     return since.strftime("%Y-%m-%d %H:%M") if since else "(beginning of retained log)"
 
 
+def _plural_lines(n: int) -> str:
+    return f"{n} line" if n == 1 else f"{n} lines"
+
+
 def build_summary_section(result: ScanResult) -> str:
     """Build the "what did Log Doctor actually check" section.
 
@@ -128,9 +143,23 @@ def build_summary_section(result: ScanResult) -> str:
     distinct = len(result.reports)
     lines = [
         "## 🩺 Scan summary",
-        f"- Log file: `{result.log_path}`",
-        f"- Window checked: {_format_since(result.since)} → {result.scanned_at.strftime('%Y-%m-%d %H:%M')}",
-        f"- Log lines read: {result.lines_scanned}",
+        f"- Home Assistant Core log: `{result.log_path}` ({_plural_lines(result.lines_scanned)})",
+        f"- Window checked (Core log): {_format_since(result.since)} → {result.scanned_at.strftime('%Y-%m-%d %H:%M')}",
+    ]
+    if result.sources_checked:
+        lines.append(f"- Other sources checked ({len(result.sources_checked)}):")
+        for source in result.sources_checked:
+            if source.ok:
+                lines.append(f"  - {source.name}: {_plural_lines(source.lines_read)}")
+            else:
+                lines.append(f"  - {source.name}: unavailable ({source.note or 'no response'})")
+    else:
+        lines.append(
+            "- Other sources checked: none (Supervisor API not reachable - "
+            "this isn't a Home Assistant OS/Supervised install, or the "
+            "check is disabled)"
+        )
+    lines += [
         f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
         f"- Matched to built-in knowledge base: {result.known_issue_matches}",
     ]

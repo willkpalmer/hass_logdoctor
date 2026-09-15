@@ -20,6 +20,17 @@ _LINE_RE = re.compile(
 
 _TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
+# Supervisor/Host/add-on log text is often colorized for a terminal.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Best-effort severity detection for sources that aren't formatted like
+# Home Assistant Core's own logger (Host journal lines, arbitrary add-on
+# stdout, etc). Matched as a whole word, case-insensitively, so "errors" or
+# "warns" mid-sentence don't trip it, but "Warning:", "error:", "FATAL" all
+# do - non-Python add-ons are inconsistent about casing.
+_LEVEL_KEYWORD_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\b", re.IGNORECASE)
+_LEVEL_ALIASES = {"WARN": "WARNING", "FATAL": "CRITICAL"}
+
 # Patterns used to normalize a message into a stable "signature" so that
 # repeated occurrences of the same underlying problem (with different
 # entity_ids, numbers, paths, etc.) are grouped together.
@@ -107,6 +118,59 @@ def parse_log_lines(lines: list[str]) -> list[LogEntry]:
 
     if current is not None:
         entries.append(current)
+
+    return entries
+
+
+def parse_supervisor_log_text(
+    text: str, source_name: str, fallback_timestamp: datetime
+) -> list[LogEntry]:
+    """Parse plain-text logs fetched from the Supervisor API (Host, add-ons, etc).
+
+    These aren't guaranteed to be formatted like Home Assistant Core's own
+    logger, so this first tries the same structured format (Supervisor
+    itself uses it) and otherwise falls back to a keyword-based severity
+    scan. Lines that don't mention a level keyword are simply not anomalies
+    and are skipped - there's no traceback-folding here since these sources
+    are fetched as a short, bounded tail rather than a full historical file.
+    """
+    entries: list[LogEntry] = []
+    for raw_line in text.splitlines():
+        line = _ANSI_RE.sub("", raw_line).strip()
+        if not line:
+            continue
+
+        match = _LINE_RE.match(line)
+        if match:
+            try:
+                timestamp = datetime.strptime(match.group("ts"), _TS_FORMAT)
+            except ValueError:
+                timestamp = fallback_timestamp
+            entries.append(
+                LogEntry(
+                    timestamp=timestamp,
+                    level=match.group("level"),
+                    logger=f"{source_name}:{match.group('logger')}",
+                    message=match.group("message"),
+                    raw=line,
+                )
+            )
+            continue
+
+        keyword_match = _LEVEL_KEYWORD_RE.search(line)
+        if not keyword_match:
+            continue
+        keyword = keyword_match.group(1).upper()
+        level = _LEVEL_ALIASES.get(keyword, keyword)
+        entries.append(
+            LogEntry(
+                timestamp=fallback_timestamp,
+                level=level,
+                logger=source_name,
+                message=line,
+                raw=line,
+            )
+        )
 
     return entries
 

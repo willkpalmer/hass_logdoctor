@@ -83,4 +83,8 @@ class LogDoctorAnomalySensor(CoordinatorEntity[LogDoctorCoordinator], SensorEnti
             ATTR_LAST_REPORT: report_text,
             ATTR_REPORT_FILE: result.report_file,
             ATTR_REPORTS_DIR: self.coordinator.hass.config.path(REPORTS_DIR_NAME),
+            "sources_checked": [
+                {"name": s.name, "lines_read": s.lines_read, "ok": s.ok, "note": s.note}
+                for s in result.sources_checked
+            ],
         }

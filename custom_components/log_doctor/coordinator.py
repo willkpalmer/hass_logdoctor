@@ -10,15 +10,23 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     DEFAULT_GITHUB_CACHE_DAYS,
+    DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_REPORT_RETENTION_DAYS,
     DOMAIN,
     NOTIFICATION_ID,
 )
-from .digest import AnomalyReport, ScanResult, build_markdown_digest, build_mobile_summary
+from .digest import (
+    AnomalyReport,
+    LogSourceSummary,
+    ScanResult,
+    build_markdown_digest,
+    build_mobile_summary,
+)
 from .github_lookup import GitHubLookupClient
+from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
 from .knowledge_base import match_known_issue
-from .log_parser import filter_and_group, parse_log_lines
+from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
 from .report_files import async_write_report
 from .store import LogDoctorStore
 
@@ -44,6 +52,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         max_github_queries: int,
         mobile_notify_service: str | None,
         report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS,
+        include_supervisor_logs: bool = DEFAULT_INCLUDE_SUPERVISOR_LOGS,
         store: LogDoctorStore,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
@@ -56,6 +65,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.max_github_queries = max_github_queries
         self.mobile_notify_service = mobile_notify_service
         self.report_retention_days = report_retention_days
+        self.include_supervisor_logs = include_supervisor_logs
         self.store = store
 
     async def _async_update_data(self) -> ScanResult:
@@ -70,6 +80,25 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         entries = parse_log_lines(lines)
         since = self.store.data.last_scan or (now - timedelta(hours=self.lookback_hours))
+
+        sources_checked: list[LogSourceSummary] = []
+        if self.include_supervisor_logs and supervisor_available():
+            sources = await async_list_all_sources(self.hass)
+            fetched = await async_fetch_all_logs(self.hass, sources)
+            for log_path, (name, text) in fetched.items():
+                if text is None:
+                    sources_checked.append(
+                        LogSourceSummary(name=name, lines_read=0, ok=False)
+                    )
+                    continue
+                source_lines = text.splitlines()
+                entries.extend(
+                    parse_supervisor_log_text(text, name, fallback_timestamp=now)
+                )
+                sources_checked.append(
+                    LogSourceSummary(name=name, lines_read=len(source_lines), ok=True)
+                )
+
         groups = filter_and_group(entries, self.min_severity, since)
 
         reports: list[AnomalyReport] = []
@@ -120,6 +149,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             since=since,
             reports=reports,
             lines_scanned=len(lines),
+            sources_checked=sources_checked,
         )
         result.report_markdown = build_markdown_digest(result)
         result.report_file = await async_write_report(

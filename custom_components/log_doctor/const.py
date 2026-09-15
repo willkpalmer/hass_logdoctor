@@ -24,6 +24,8 @@ CONF_MIN_SEVERITY = "min_severity"
 CONF_MAX_GITHUB_QUERIES = "max_github_queries"
 CONF_ENABLE_GITHUB_LOOKUP = "enable_github_lookup"
 CONF_REPORT_RETENTION_DAYS = "report_retention_days"
+CONF_INCLUDE_SUPERVISOR_LOGS = "include_supervisor_logs"
+DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
 
 SEVERITY_LEVELS = ["WARNING", "ERROR", "CRITICAL"]
 SEVERITY_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}

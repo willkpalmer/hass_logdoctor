@@ -23,6 +23,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_ENABLE_GITHUB_LOOKUP,
     CONF_GITHUB_TOKEN,
+    CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
     CONF_MAX_GITHUB_QUERIES,
@@ -30,6 +31,7 @@ from .const import (
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
+    DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_MIN_SEVERITY,
@@ -90,6 +92,12 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
             ): NumberSelector(
                 NumberSelectorConfig(min=1, max=365, step=1, mode=NumberSelectorMode.BOX)
             ),
+            vol.Required(
+                CONF_INCLUDE_SUPERVISOR_LOGS,
+                default=defaults.get(
+                    CONF_INCLUDE_SUPERVISOR_LOGS, DEFAULT_INCLUDE_SUPERVISOR_LOGS
+                ),
+            ): BooleanSelector(),
         }
     )
 

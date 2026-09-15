@@ -14,20 +14,30 @@ context, but every action it takes is a report, never a change.
 ## What it does
 
 1. On a schedule you choose (default: daily at 08:00), it reads your
-   `home-assistant.log` file.
-2. Warning/error/critical lines are grouped into "anomalies" by a
+   `home-assistant.log` file in full.
+2. **On Home Assistant OS or Supervised installs**, it also checks every
+   other log source shown in the dropdown on **Settings → System → Logs**
+   - Supervisor, Host, DNS, Audio, CLI, Multicast, and every installed
+   add-on - by talking to the Supervisor API directly (the same mechanism
+   that page itself uses). Home Assistant Core can't read those as plain
+   files; they only exist in separate containers/journald. This is
+   automatic and needs no setup, and is silently skipped on a Core-only
+   install (Docker/Container/venv) where there's no Supervisor to ask. It
+   can be turned off in configuration if you'd rather it only checked
+   `home-assistant.log`.
+3. Warning/error/critical lines are grouped into "anomalies" by a
    normalized signature, so 50 occurrences of the same underlying problem
    show up as one entry with a count, not 50 separate reports.
-3. Each anomaly is checked against a bundled knowledge base of common,
+4. Each anomaly is checked against a bundled knowledge base of common,
    well-known Home Assistant issues (database locks, blocking calls,
    deprecated config, SSL errors, MQTT/Zigbee/Z-Wave network issues,
    auth failures, etc.) for an instant explanation and suggested fix.
-4. Anything not covered by the built-in knowledge base is (optionally)
+5. Anything not covered by the built-in knowledge base is (optionally)
    looked up live via the GitHub issue search API, scoped to
    `home-assistant/core` for built-in integrations or a best-effort search
    for custom components, so you get links to relevant existing issues and
    their resolution status.
-5. **Every scan produces a full report, even when nothing is wrong** — it
+6. **Every scan produces a full report, even when nothing is wrong** — it
    always states what log file was read, the time window covered, how many
    lines/entries were checked, and how many were matched against the
    knowledge base or GitHub, so a clean run is evidence of a real check
@@ -75,9 +85,46 @@ context, but every action it takes is a report, never a change.
      get a push notification summary. Leave blank to skip.
    - **Report retention** — how many days of past report files to keep on
      disk before they're pruned.
+   - **Check Supervisor/Host/add-on logs** — on by default; only has any
+     effect on Home Assistant OS/Supervised installs (see
+     [Supervisor-managed logs](#supervisor-managed-logs) below).
 
 All of these can be changed later from the integration's **Configure**
 button.
+
+## Supervisor-managed logs
+
+On Home Assistant OS or Supervised, the Settings → System → Logs page
+covers more than just Home Assistant Core - Supervisor, Host, the DNS/
+Audio/CLI/Multicast plugins, and each add-on all keep their own separate
+logs, none of which are plain files Home Assistant Core can read. Log
+Doctor reaches them the same way that Settings page does: through the
+Supervisor's internal API (`SUPERVISOR`/`SUPERVISOR_TOKEN`, injected into
+the Core container automatically - no token or extra setup needed on your
+end).
+
+A couple of things are different for these sources compared to
+`home-assistant.log`:
+
+- Each fetch only returns a short, bounded tail of recent log lines (not a
+  full history), so there's no separate "lookback window" for them - Log
+  Doctor just checks the current tail every scan. Repeat entries are still
+  deduped by the same "already reported" tracking as everything else, so
+  you won't get renotified for the same ongoing issue every day.
+- Home Assistant Core's own structured `LEVEL (thread) [logger] message`
+  format is only guaranteed for Core and Supervisor (which uses the same
+  logger). Host, plugin, and add-on logs can be formatted however that
+  process chooses, so Log Doctor falls back to a best-effort scan for the
+  words `ERROR`, `WARNING`, `CRITICAL`, or `FATAL` as whole words on those.
+  It's less precise than the structured parsing - occasionally a line that
+  merely mentions one of those words could be flagged - but it's the only
+  way to catch problems in logs with no fixed format.
+- Home Assistant Core's own log entry is deliberately skipped here, since
+  Log Doctor already reads the complete `home-assistant.log` file directly
+  (a fuller history than this endpoint's bounded tail).
+
+The scan summary in every report lists exactly which sources were checked
+and how many lines each returned, so you can always see what was covered.
 
 ## Retained reports
 
@@ -95,7 +142,7 @@ days) are pruned automatically; `latest.md` is never pruned.
 
 | Entity | Description |
 | --- | --- |
-| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full anomaly list (message, count, level, known fix or GitHub matches, first/last seen), scan stats (lines read, matches, GitHub checks), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
+| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full anomaly list (message, count, level, known fix or GitHub matches, first/last seen), scan stats (lines read, matches, GitHub checks), which log sources were checked and how many lines each returned (`sources_checked`), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
 | `button.log_doctor_scan_now` | Triggers an immediate scan outside the daily schedule. |
 
 ## Services
