@@ -49,6 +49,11 @@ class AnomalyReport:
             "is_new": self.is_new,
             "first_seen": self.group.first_seen.isoformat() if self.group.first_seen else None,
             "last_seen": self.group.last_seen.isoformat() if self.group.last_seen else None,
+            "description": (
+                self.known_issue.explanation
+                if self.known_issue
+                else _describe_from_matches(self) or "Description not available."
+            ),
             "known_fix_title": self.known_issue.title if self.known_issue else None,
             "known_fix": self.known_issue.fix if self.known_issue else None,
             "doc_url": self.known_issue.doc_url if self.known_issue else None,
@@ -142,6 +147,45 @@ class ScanResult:
         )
 
 
+_LOOKUP_SOURCE_LABELS = (
+    ("Home Assistant docs", "docs_result"),
+    ("Community forum", "community_result"),
+    ("GitHub", "github_result"),
+)
+
+
+def _humanize_lookup_error(error: str) -> str:
+    """Turn a raw lookup error code/exception string into plain English."""
+    if error == "rate_limited":
+        return "rate-limited, try again later"
+    if error.startswith("http_"):
+        return f"the site returned an error (HTTP {error.removeprefix('http_')})"
+    return "temporarily unavailable"
+
+
+def _lookup_error_notes(report: AnomalyReport) -> list[str]:
+    """Human-readable notes for any lookup that failed, one per failed source."""
+    notes = []
+    for label, attr in _LOOKUP_SOURCE_LABELS:
+        result = getattr(report, attr)
+        if result and result.error:
+            notes.append(f"{label} - {_humanize_lookup_error(result.error)}")
+    return notes
+
+
+def _describe_from_matches(report: AnomalyReport) -> str | None:
+    """Best plain-English snippet describing this anomaly, from docs/community text."""
+    if report.docs_result:
+        for match in report.docs_result.matches:
+            if match.snippet:
+                return match.snippet
+    if report.community_result:
+        for match in report.community_result.matches:
+            if match.excerpt:
+                return match.excerpt
+    return None
+
+
 def _format_report_line(report: AnomalyReport) -> str:
     emoji = _LEVEL_EMOJI.get(report.group.level, "•")
     lines = [
@@ -151,10 +195,15 @@ def _format_report_line(report: AnomalyReport) -> str:
 
     if report.known_issue:
         lines.append(f"  📖 *Known issue:* {report.known_issue.title}")
+        if report.known_issue.explanation:
+            lines.append(f"     {report.known_issue.explanation}")
         lines.append(f"     Fix: {report.known_issue.fix}")
         if report.known_issue.doc_url:
             lines.append(f"     Docs: {report.known_issue.doc_url}")
         return "\n".join(lines)
+
+    description = _describe_from_matches(report)
+    lines.append(f"  📝 {description or 'Description not available.'}")
 
     found_anything = False
 
@@ -186,15 +235,9 @@ def _format_report_line(report: AnomalyReport) -> str:
             lines.append(f"       {match.url}")
 
     if not found_anything:
-        errors = sorted(
-            {
-                r.error
-                for r in (report.docs_result, report.community_result, report.github_result)
-                if r and r.error
-            }
-        )
-        if errors:
-            lines.append(f"  🔍 External lookups skipped ({', '.join(errors)})")
+        error_notes = _lookup_error_notes(report)
+        if error_notes:
+            lines.append(f"  🔍 External lookups: {'; '.join(error_notes)}")
         elif report.docs_result or report.community_result or report.github_result:
             lines.append(
                 "  🔍 No matches found in the knowledge base, docs, community, or GitHub."
