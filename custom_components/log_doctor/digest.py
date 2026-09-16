@@ -52,7 +52,7 @@ class AnomalyReport:
             "description": (
                 self.known_issue.explanation
                 if self.known_issue
-                else _describe_from_matches(self) or "Description not available."
+                else _describe_from_matches(self) or "No information available"
             ),
             "known_fix_title": self.known_issue.title if self.known_issue else None,
             "known_fix": self.known_issue.fix if self.known_issue else None,
@@ -147,32 +147,6 @@ class ScanResult:
         )
 
 
-_LOOKUP_SOURCE_LABELS = (
-    ("Home Assistant docs", "docs_result"),
-    ("Community forum", "community_result"),
-    ("GitHub", "github_result"),
-)
-
-
-def _humanize_lookup_error(error: str) -> str:
-    """Turn a raw lookup error code/exception string into plain English."""
-    if error == "rate_limited":
-        return "rate-limited, try again later"
-    if error.startswith("http_"):
-        return f"the site returned an error (HTTP {error.removeprefix('http_')})"
-    return "temporarily unavailable"
-
-
-def _lookup_error_notes(report: AnomalyReport) -> list[str]:
-    """Human-readable notes for any lookup that failed, one per failed source."""
-    notes = []
-    for label, attr in _LOOKUP_SOURCE_LABELS:
-        result = getattr(report, attr)
-        if result and result.error:
-            notes.append(f"{label} - {_humanize_lookup_error(result.error)}")
-    return notes
-
-
 def _describe_from_matches(report: AnomalyReport) -> str | None:
     """Best plain-English snippet describing this anomaly, from docs/community text."""
     if report.docs_result:
@@ -194,54 +168,12 @@ def _format_report_line(report: AnomalyReport) -> str:
     ]
 
     if report.known_issue:
-        lines.append(f"  📖 *Known issue:* {report.known_issue.title}")
-        if report.known_issue.explanation:
-            lines.append(f"     {report.known_issue.explanation}")
+        lines.append(f"  📝 {report.known_issue.explanation}")
         lines.append(f"     Fix: {report.known_issue.fix}")
-        if report.known_issue.doc_url:
-            lines.append(f"     Docs: {report.known_issue.doc_url}")
         return "\n".join(lines)
 
     description = _describe_from_matches(report)
-    lines.append(f"  📝 {description or 'Description not available.'}")
-
-    found_anything = False
-
-    if report.docs_result and report.docs_result.matches:
-        found_anything = True
-        lines.append("  📘 Home Assistant docs:")
-        for match in report.docs_result.matches:
-            lines.append(f"     - {match.title}")
-            if match.snippet:
-                lines.append(f'       "{match.snippet}"')
-            lines.append(f"       {match.url}")
-
-    if report.community_result and report.community_result.matches:
-        found_anything = True
-        lines.append("  💬 Community forum:")
-        for match in report.community_result.matches:
-            status = "✅ solved" if match.solved else f"{match.reply_count} replies"
-            lines.append(f"     - [{status}] {match.title}")
-            if match.excerpt:
-                lines.append(f'       "{match.excerpt}"')
-            lines.append(f"       {match.url}")
-
-    if report.github_result and report.github_result.matches:
-        found_anything = True
-        lines.append("  🔗 GitHub issues:")
-        for match in report.github_result.matches:
-            state = "✅ closed" if match.state == "closed" else "🟢 open"
-            lines.append(f"     - [{state}] {match.title}")
-            lines.append(f"       {match.url}")
-
-    if not found_anything:
-        error_notes = _lookup_error_notes(report)
-        if error_notes:
-            lines.append(f"  🔍 External lookups: {'; '.join(error_notes)}")
-        elif report.docs_result or report.community_result or report.github_result:
-            lines.append(
-                "  🔍 No matches found in the knowledge base, docs, community, or GitHub."
-            )
+    lines.append(f"  📝 {description or 'No information available'}")
 
     return "\n".join(lines)
 
