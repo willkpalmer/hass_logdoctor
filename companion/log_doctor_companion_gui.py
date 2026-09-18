@@ -214,6 +214,15 @@ class CompanionApp(tk.Tk):
                     "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
                 ))
                 return
+            except TypeError as err:
+                # The SDK raises a bare TypeError (not AuthenticationError) when no
+                # credentials are configured at all - see the message it raises.
+                self._events.put((
+                    "error",
+                    f"Could not authenticate with Claude: {err}\n"
+                    "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
+                ))
+                return
             except anthropic.APIStatusError as err:
                 findings = (
                     f"No information available (Claude API error: {err.status_code} {err.message})"

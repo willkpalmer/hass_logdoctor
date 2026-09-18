@@ -229,6 +229,15 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+        except TypeError as err:
+            # The SDK raises a bare TypeError (not AuthenticationError) when no
+            # credentials are configured at all - see the message it raises.
+            print(
+                f"\nCould not authenticate with Claude: {err}\n"
+                "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         except anthropic.APIStatusError as err:
             findings = f"No information available (Claude API error: {err.status_code} {err.message})"
         except anthropic.APIConnectionError as err:
