@@ -63,7 +63,7 @@ report, never a change.
 ### HACS (custom repository)
 
 1. In HACS, go to the three-dot menu → **Custom repositories**.
-2. Add `https://github.com/willkpalmer/hass_logreview` as category
+2. Add `https://github.com/willkpalmer/hass_logdoctor` as category
    **Integration**.
 3. Install **Log Doctor**, then restart Home Assistant.
 

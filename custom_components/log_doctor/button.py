@@ -32,7 +32,7 @@ class LogDoctorScanNowButton(ButtonEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="Log Doctor",
-            manufacturer="hass_logreview",
+            manufacturer="hass_logdoctor",
             model="Log Doctor",
             entry_type=DeviceEntryType.SERVICE,
         )
