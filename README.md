@@ -148,11 +148,37 @@ the file the [companion app](#companion-app) reads.
 `companion/log_doctor_companion.py` is a separate command-line script -
 not part of the Home Assistant integration, and not installed by it. Run
 it on your own machine, whenever you want, against a report Log Doctor
-wrote:
+wrote. There's a command-line version and a desktop GUI version - both
+share the same research logic.
 
 ```bash
 cd companion
 pip install -r requirements.txt
+```
+
+### GUI
+
+```bash
+python log_doctor_companion_gui.py
+```
+
+A small window (built with Tk, part of the Python standard library - no
+extra install) with:
+
+- **Input report** — **Browse...** opens a file picker for the markdown
+  report (starts in `log_doctor_reports/` if that exists next to where
+  you ran it from).
+- **Output file** — defaults to the input file's own folder (e.g.
+  `latest.md` → `latest.findings.md`), with its own **Browse...** to save
+  somewhere else instead.
+- **Process** — researches every anomaly in the input file, showing
+  progress and a running log as it goes.
+- **View output** — enabled once processing finishes; opens the findings
+  file in your system's default app for it.
+
+### Command line
+
+```bash
 python log_doctor_companion.py
 ```
 
@@ -162,6 +188,8 @@ With no argument it prompts for a report path (defaulting to
 ```bash
 python log_doctor_companion.py /path/to/log_doctor_reports/latest.md
 ```
+
+### What it does
 
 For each anomaly in the report, it asks Claude - with web search enabled,
 so it can check the Home Assistant docs, GitHub issues, the Community
