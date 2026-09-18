@@ -15,25 +15,19 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     TextSelector,
-    TextSelectorConfig,
-    TextSelectorType,
     TimeSelector,
 )
 
 from .const import (
-    CONF_ENABLE_GITHUB_LOOKUP,
-    CONF_GITHUB_TOKEN,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
-    CONF_MAX_GITHUB_QUERIES,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
-    DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
@@ -66,19 +60,6 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 default=defaults.get(CONF_LOOKBACK_HOURS, DEFAULT_LOOKBACK_HOURS),
             ): NumberSelector(
                 NumberSelectorConfig(min=1, max=168, step=1, mode=NumberSelectorMode.BOX)
-            ),
-            vol.Required(
-                CONF_ENABLE_GITHUB_LOOKUP,
-                default=defaults.get(CONF_ENABLE_GITHUB_LOOKUP, True),
-            ): BooleanSelector(),
-            vol.Optional(
-                CONF_GITHUB_TOKEN, default=defaults.get(CONF_GITHUB_TOKEN, "")
-            ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-            vol.Required(
-                CONF_MAX_GITHUB_QUERIES,
-                default=defaults.get(CONF_MAX_GITHUB_QUERIES, DEFAULT_MAX_GITHUB_QUERIES),
-            ): NumberSelector(
-                NumberSelectorConfig(min=0, max=100, step=1, mode=NumberSelectorMode.BOX)
             ),
             vol.Optional(
                 CONF_MOBILE_NOTIFY_SERVICE,

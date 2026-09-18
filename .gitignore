@@ -7,3 +7,8 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+
+# Log Doctor reports and companion app output contain real log data from a
+# Home Assistant instance - never commit them.
+log_doctor_reports/
+*.findings.md

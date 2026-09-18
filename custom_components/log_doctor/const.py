@@ -11,18 +11,13 @@ DEFAULT_SCAN_HOUR = 8
 DEFAULT_SCAN_MINUTE = 0
 DEFAULT_LOOKBACK_HOURS = 24
 DEFAULT_MIN_SEVERITY = "WARNING"
-DEFAULT_MAX_GITHUB_QUERIES = 15
-DEFAULT_GITHUB_CACHE_DAYS = 7
 DEFAULT_REPORT_RETENTION_DAYS = 30
 
 CONF_LOG_PATH = "log_path"
 CONF_SCAN_TIME = "scan_time"
-CONF_GITHUB_TOKEN = "github_token"
 CONF_MOBILE_NOTIFY_SERVICE = "mobile_notify_service"
 CONF_LOOKBACK_HOURS = "lookback_hours"
 CONF_MIN_SEVERITY = "min_severity"
-CONF_MAX_GITHUB_QUERIES = "max_github_queries"
-CONF_ENABLE_GITHUB_LOOKUP = "enable_github_lookup"
 CONF_REPORT_RETENTION_DAYS = "report_retention_days"
 CONF_INCLUDE_SUPERVISOR_LOGS = "include_supervisor_logs"
 DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
@@ -31,6 +26,10 @@ DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
 # enforce an upper bound on this parameter).
 SUPERVISOR_LOG_LINES = 1000
+
+# Cap on how many raw log occurrences are printed per anomaly in the
+# report, so one extremely noisy signature can't blow up the file.
+MAX_LOG_ENTRIES_PER_ANOMALY = 20
 
 SEVERITY_LEVELS = ["WARNING", "ERROR", "CRITICAL"]
 SEVERITY_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
@@ -49,9 +48,6 @@ ATTR_LAST_SCAN = "last_scan"
 ATTR_LAST_REPORT = "last_report"
 ATTR_REPORT_FILE = "report_file"
 ATTR_REPORTS_DIR = "reports_dir"
-
-GITHUB_API_BASE = "https://api.github.com"
-GITHUB_CORE_REPO = "home-assistant/core"
 
 REPORTS_DIR_NAME = "log_doctor_reports"
 LATEST_REPORT_FILENAME = "latest.md"

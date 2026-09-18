@@ -1,17 +1,22 @@
-"""Build the human-readable daily digest from a scan's anomalies."""
+"""Build the markdown scan report from a scan's anomalies.
+
+Per anomaly, the report lists the raw log data (all matching occurrences,
+up to a cap) rather than any synthesized summary - that diagnosis step is
+left to the separate companion app (see companion/), which researches each
+one with Claude.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from .community_lookup import CommunityLookupResult
-from .github_lookup import GitHubLookupResult
-from .ha_docs_lookup import DocsLookupResult
+from .const import MAX_LOG_ENTRIES_PER_ANOMALY
 from .knowledge_base import KnownIssue
 from .log_parser import AnomalyGroup
 
 _LEVEL_EMOJI = {"WARNING": "⚠️", "ERROR": "🛑", "CRITICAL": "🔴"}
+_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 @dataclass
@@ -31,9 +36,6 @@ class AnomalyReport:
     group: AnomalyGroup
     is_new: bool
     known_issue: KnownIssue | None = None
-    github_result: GitHubLookupResult | None = None
-    docs_result: DocsLookupResult | None = None
-    community_result: CommunityLookupResult | None = None
 
     @property
     def signature(self) -> str:
@@ -50,27 +52,11 @@ class AnomalyReport:
             "first_seen": self.group.first_seen.isoformat() if self.group.first_seen else None,
             "last_seen": self.group.last_seen.isoformat() if self.group.last_seen else None,
             "description": (
-                self.known_issue.explanation
-                if self.known_issue
-                else _describe_from_matches(self) or "No information available"
+                self.known_issue.explanation if self.known_issue else "No information available"
             ),
             "known_fix_title": self.known_issue.title if self.known_issue else None,
             "known_fix": self.known_issue.fix if self.known_issue else None,
             "doc_url": self.known_issue.doc_url if self.known_issue else None,
-            "github_matches": (
-                [m.__dict__ for m in self.github_result.matches]
-                if self.github_result
-                else []
-            ),
-            "github_search_url": self.github_result.search_url if self.github_result else None,
-            "docs_matches": (
-                [m.__dict__ for m in self.docs_result.matches] if self.docs_result else []
-            ),
-            "community_matches": (
-                [m.__dict__ for m in self.community_result.matches]
-                if self.community_result
-                else []
-            ),
         }
 
 
@@ -105,76 +91,41 @@ class ScanResult:
     def known_issue_matches(self) -> int:
         return sum(1 for r in self.reports if r.known_issue is not None)
 
-    @property
-    def github_checked(self) -> int:
-        return sum(1 for r in self.reports if r.github_result is not None)
 
-    @property
-    def github_found(self) -> int:
-        return sum(
-            1 for r in self.reports if r.github_result and r.github_result.matches
-        )
-
-    @property
-    def github_skipped(self) -> int:
-        return sum(1 for r in self.reports if r.github_result and r.github_result.error)
-
-    @property
-    def docs_checked(self) -> int:
-        return sum(1 for r in self.reports if r.docs_result is not None)
-
-    @property
-    def docs_found(self) -> int:
-        return sum(1 for r in self.reports if r.docs_result and r.docs_result.matches)
-
-    @property
-    def community_checked(self) -> int:
-        return sum(1 for r in self.reports if r.community_result is not None)
-
-    @property
-    def community_found(self) -> int:
-        return sum(
-            1 for r in self.reports if r.community_result and r.community_result.matches
-        )
-
-    @property
-    def community_solved(self) -> int:
-        return sum(
-            1
-            for r in self.reports
-            if r.community_result
-            and any(m.solved for m in r.community_result.matches)
-        )
+def _format_ts(ts: datetime | None) -> str:
+    return ts.strftime(_TS_FORMAT) if ts else "unknown"
 
 
-def _describe_from_matches(report: AnomalyReport) -> str | None:
-    """Best plain-English snippet describing this anomaly, from docs/community text."""
-    if report.docs_result:
-        for match in report.docs_result.matches:
-            if match.snippet:
-                return match.snippet
-    if report.community_result:
-        for match in report.community_result.matches:
-            if match.excerpt:
-                return match.excerpt
-    return None
+def _format_anomaly_block(report: AnomalyReport) -> str:
+    """One anomaly as a heading + metadata + a fenced block of its raw log lines.
 
-
-def _format_report_line(report: AnomalyReport) -> str:
-    emoji = _LEVEL_EMOJI.get(report.group.level, "•")
+    Deliberately a plain data dump, not a summary - the companion app reads
+    this same structure to research each anomaly with Claude.
+    """
+    group = report.group
+    emoji = _LEVEL_EMOJI.get(group.level, "•")
     lines = [
-        f"{emoji} **{report.group.logger}** ({report.group.level}, x{report.group.count})",
-        f"  {report.group.example_message[:220]}",
+        f"#### {emoji} {group.level} × {group.count} — {group.logger}",
+        f"- Signature: `{group.signature}`",
+        f"- First seen: {_format_ts(group.first_seen)}",
+        f"- Last seen: {_format_ts(group.last_seen)}",
+        "",
+        "```text",
     ]
 
-    if report.known_issue:
-        lines.append(f"  📝 {report.known_issue.explanation}")
-        lines.append(f"     Fix: {report.known_issue.fix}")
-        return "\n".join(lines)
+    shown = group.entries[:MAX_LOG_ENTRIES_PER_ANOMALY]
+    for i, entry in enumerate(shown):
+        if i > 0:
+            lines.append("")
+        lines.append(entry.raw)
 
-    description = _describe_from_matches(report)
-    lines.append(f"  📝 {description or 'No information available'}")
+    remaining = len(group.entries) - len(shown)
+    if remaining > 0:
+        lines.append("")
+        occurrence = "occurrence" if remaining == 1 else "occurrences"
+        lines.append(f"... ({remaining} more {occurrence} of this signature not shown)")
 
+    lines.append("```")
     return "\n".join(lines)
 
 
@@ -215,29 +166,11 @@ def build_summary_section(result: ScanResult) -> str:
         f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
         f"- Matched to built-in knowledge base: {result.known_issue_matches}",
     ]
-    researched = max(result.docs_checked, result.community_checked, result.github_checked)
-    if researched:
-        lines.append(f"- Researched online for {researched} unmatched anomalies:")
-        lines.append(
-            f"  - Home Assistant docs: {result.docs_found} with a related page found"
-        )
-        lines.append(
-            f"  - Community forum: {result.community_found} with related discussion "
-            f"found ({result.community_solved} marked solved)"
-        )
-        lines.append(
-            f"  - GitHub: {result.github_found} with related issues found, "
-            f"{result.github_skipped} skipped/rate-limited"
-        )
-    else:
-        lines.append(
-            "- Researched online: nothing needed it (all matched or lookups disabled)"
-        )
     return "\n".join(lines)
 
 
 def build_markdown_digest(result: ScanResult) -> str:
-    """Build the full markdown digest: always a full report, never just a status line."""
+    """Build the full markdown report: always a full report, never just a status line."""
     parts: list[str] = [build_summary_section(result)]
 
     if not result.reports:
@@ -245,10 +178,10 @@ def build_markdown_digest(result: ScanResult) -> str:
     else:
         if result.new_reports:
             parts.append(f"### 🆕 New anomalies ({len(result.new_reports)})")
-            parts.extend(_format_report_line(r) for r in result.new_reports)
+            parts.extend(_format_anomaly_block(r) for r in result.new_reports)
         if result.recurring_reports:
             parts.append(f"### 🔁 Still occurring ({len(result.recurring_reports)})")
-            parts.extend(_format_report_line(r) for r in result.recurring_reports)
+            parts.extend(_format_anomaly_block(r) for r in result.recurring_reports)
 
     parts.append(
         "\n_Log Doctor only reports issues - it never changes your "
@@ -262,9 +195,8 @@ def build_notification_digest(result: ScanResult) -> str:
 
     Keeps the full "what was checked" scan summary, but shows only totals
     for new vs. still-occurring anomalies rather than writing each one out
-    - that per-anomaly detail (message, known fix, GitHub matches) still
-    lives in full in the retained report file and on
-    sensor.log_doctor_anomalies's attributes.
+    - that per-anomaly detail still lives in full in the retained report
+    file and on sensor.log_doctor_anomalies's attributes.
     """
     parts: list[str] = [build_summary_section(result)]
 

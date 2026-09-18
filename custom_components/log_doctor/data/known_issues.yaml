@@ -2,8 +2,9 @@
 #
 # Each entry is matched (case-insensitive, re.search) against the normalized
 # first line of a log message. The first matching entry wins. These are
-# meant as a fast local shortcut for very common, well-known issues; anything
-# that doesn't match falls through to a live GitHub search instead.
+# meant as a fast, local, offline shortcut for very common, well-known
+# issues; anything that doesn't match is left for the separate companion
+# app to research with Claude (see companion/).
 #
 # Fields:
 #   id:          stable short id

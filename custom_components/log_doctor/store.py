@@ -1,19 +1,15 @@
-"""Persisted state for Log Doctor: last scan time, seen signatures, and
-caches for each external lookup (GitHub, HA docs, Community forum).
+"""Persisted state for Log Doctor: last scan time and which signatures have
+already been reported.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .community_lookup import CommunityLookupResult
 from .const import STORAGE_VERSION
-from .github_lookup import GitHubLookupResult
-from .ha_docs_lookup import DocsLookupResult
 
 
 @dataclass
@@ -31,9 +27,6 @@ class LogDoctorData:
 
     last_scan: datetime | None = None
     seen_signatures: dict[str, SeenSignature] = field(default_factory=dict)
-    github_cache: dict[str, GitHubLookupResult] = field(default_factory=dict)
-    docs_cache: dict[str, DocsLookupResult] = field(default_factory=dict)
-    community_cache: dict[str, CommunityLookupResult] = field(default_factory=dict)
 
 
 class LogDoctorStore:
@@ -59,18 +52,6 @@ class LogDoctorStore:
             )
             for sig, v in raw.get("seen_signatures", {}).items()
         }
-        self.data.github_cache = {
-            sig: GitHubLookupResult.from_dict(v)
-            for sig, v in raw.get("github_cache", {}).items()
-        }
-        self.data.docs_cache = {
-            sig: DocsLookupResult.from_dict(v)
-            for sig, v in raw.get("docs_cache", {}).items()
-        }
-        self.data.community_cache = {
-            sig: CommunityLookupResult.from_dict(v)
-            for sig, v in raw.get("community_cache", {}).items()
-        }
 
     async def async_save(self) -> None:
         await self._store.async_save(
@@ -84,54 +65,12 @@ class LogDoctorStore:
                     }
                     for sig, s in self.data.seen_signatures.items()
                 },
-                "github_cache": {
-                    sig: result.as_dict() for sig, result in self.data.github_cache.items()
-                },
-                "docs_cache": {
-                    sig: result.as_dict() for sig, result in self.data.docs_cache.items()
-                },
-                "community_cache": {
-                    sig: result.as_dict() for sig, result in self.data.community_cache.items()
-                },
             }
         )
 
     async def async_clear_history(self) -> None:
         self.data = LogDoctorData()
         await self.async_save()
-
-    @staticmethod
-    def _get_cached(cache: dict[str, Any], signature: str, max_age: timedelta) -> Any | None:
-        result = cache.get(signature)
-        if result is None:
-            return None
-        if datetime.now(timezone.utc) - result.fetched_at > max_age:
-            return None
-        return result
-
-    def get_cached_github_result(
-        self, signature: str, max_age: timedelta
-    ) -> GitHubLookupResult | None:
-        return self._get_cached(self.data.github_cache, signature, max_age)
-
-    def store_github_result(self, signature: str, result: GitHubLookupResult) -> None:
-        self.data.github_cache[signature] = result
-
-    def get_cached_docs_result(
-        self, signature: str, max_age: timedelta
-    ) -> DocsLookupResult | None:
-        return self._get_cached(self.data.docs_cache, signature, max_age)
-
-    def store_docs_result(self, signature: str, result: DocsLookupResult) -> None:
-        self.data.docs_cache[signature] = result
-
-    def get_cached_community_result(
-        self, signature: str, max_age: timedelta
-    ) -> CommunityLookupResult | None:
-        return self._get_cached(self.data.community_cache, signature, max_age)
-
-    def store_community_result(self, signature: str, result: CommunityLookupResult) -> None:
-        self.data.community_cache[signature] = result
 
     def mark_signature_seen(self, signature: str, when: datetime) -> bool:
         """Record a signature as seen; return True if this is the first time ever."""

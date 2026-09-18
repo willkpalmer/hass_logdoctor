@@ -1,9 +1,11 @@
 """The Log Doctor integration.
 
 Periodically scans the Home Assistant log for warnings/errors, matches them
-against a built-in knowledge base and (optionally) a live GitHub issue
-search, and reports what it finds once a day. It never modifies your
-configuration or takes any remediation action - it only reports.
+against a built-in knowledge base, and reports what it finds once a day. It
+never modifies your configuration or takes any remediation action - it only
+reports. Deeper diagnosis of anomalies not covered by the built-in
+knowledge base is left to the separate companion app (see companion/),
+which researches each one with Claude.
 """
 from __future__ import annotations
 
@@ -14,19 +16,15 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
-    CONF_ENABLE_GITHUB_LOOKUP,
-    CONF_GITHUB_TOKEN,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
-    CONF_MAX_GITHUB_QUERIES,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
-    DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
@@ -58,7 +56,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await store.async_load()
     await async_warm_known_issues(hass)
 
-    github_token = options.get(CONF_GITHUB_TOKEN) or None
     mobile_notify = options.get(CONF_MOBILE_NOTIFY_SERVICE) or None
     if mobile_notify:
         mobile_notify = mobile_notify.removeprefix("notify.")
@@ -68,9 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         log_path=options.get(CONF_LOG_PATH) or hass.config.path("home-assistant.log"),
         lookback_hours=options.get(CONF_LOOKBACK_HOURS, DEFAULT_LOOKBACK_HOURS),
         min_severity=options.get(CONF_MIN_SEVERITY, DEFAULT_MIN_SEVERITY),
-        enable_github_lookup=options.get(CONF_ENABLE_GITHUB_LOOKUP, True),
-        github_token=github_token,
-        max_github_queries=options.get(CONF_MAX_GITHUB_QUERIES, DEFAULT_MAX_GITHUB_QUERIES),
         mobile_notify_service=mobile_notify,
         report_retention_days=options.get(
             CONF_REPORT_RETENTION_DAYS, DEFAULT_REPORT_RETENTION_DAYS

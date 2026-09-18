@@ -7,5 +7,5 @@ scan_now:
 clear_history:
   name: Clear history
   description: >-
-    Forget which anomalies have already been reported and clear the cached
-    GitHub lookups. The next scan will treat everything it finds as new.
+    Forget which anomalies have already been reported. The next scan will
+    treat everything it finds as new.

@@ -1,21 +1,16 @@
-"""The scan engine that ties log parsing, the knowledge base, and online
-research (GitHub, Home Assistant docs, Community forum) together.
+"""The scan engine that ties log parsing together with the built-in
+knowledge base.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .community_lookup import CommunityLookupClient, CommunityLookupResult
 from .const import (
-    DEFAULT_GITHUB_CACHE_DAYS,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
-    DEFAULT_MAX_GITHUB_QUERIES,
     DEFAULT_REPORT_RETENTION_DAYS,
     DOMAIN,
     NOTIFICATION_ID,
@@ -28,11 +23,9 @@ from .digest import (
     build_mobile_summary,
     build_notification_digest,
 )
-from .github_lookup import GitHubLookupClient, GitHubLookupResult
-from .ha_docs_lookup import DocsLookupResult, HADocsLookupClient
 from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
 from .knowledge_base import match_known_issue
-from .log_parser import AnomalyGroup, filter_and_group, parse_log_lines, parse_supervisor_log_text
+from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
 from .report_files import async_write_report
 from .store import LogDoctorStore
 
@@ -53,9 +46,6 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         log_path: str,
         lookback_hours: int,
         min_severity: str,
-        enable_github_lookup: bool,
-        github_token: str | None,
-        max_github_queries: int,
         mobile_notify_service: str | None,
         report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS,
         include_supervisor_logs: bool = DEFAULT_INCLUDE_SUPERVISOR_LOGS,
@@ -66,9 +56,6 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.log_path = log_path
         self.lookback_hours = lookback_hours
         self.min_severity = min_severity
-        self.enable_github_lookup = enable_github_lookup
-        self.github_token = github_token
-        self.max_github_queries = max_github_queries
         self.mobile_notify_service = mobile_notify_service
         self.report_retention_days = report_retention_days
         self.include_supervisor_logs = include_supervisor_logs
@@ -108,47 +95,11 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         groups = filter_and_group(entries, self.min_severity, since)
 
         reports: list[AnomalyReport] = []
-        session = async_get_clientsession(self.hass)
-        github_client = (
-            GitHubLookupClient(session, self.github_token)
-            if self.enable_github_lookup
-            else None
-        )
-        docs_client = HADocsLookupClient(session) if self.enable_github_lookup else None
-        community_client = (
-            CommunityLookupClient(session) if self.enable_github_lookup else None
-        )
-        research_used = 0
-
         for signature, group in groups.items():
             is_new = self.store.mark_signature_seen(signature, group.last_seen or now)
             known_issue = match_known_issue(group.logger, group.example_message)
-
-            github_result = docs_result = community_result = None
-            if known_issue is None and (github_client or docs_client or community_client):
-                allow_fetch = research_used < self.max_github_queries
-                github_result, docs_result, community_result, fetched = (
-                    await self._research_anomaly(
-                        signature,
-                        group,
-                        github_client,
-                        docs_client,
-                        community_client,
-                        allow_fetch=allow_fetch,
-                    )
-                )
-                if fetched:
-                    research_used += 1
-
             reports.append(
-                AnomalyReport(
-                    group=group,
-                    is_new=is_new,
-                    known_issue=known_issue,
-                    github_result=github_result,
-                    docs_result=docs_result,
-                    community_result=community_result,
-                )
+                AnomalyReport(group=group, is_new=is_new, known_issue=known_issue)
             )
 
         # Worst-first, then most frequent.
@@ -177,78 +128,6 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         await self._async_notify(result)
         return result
-
-    async def _research_anomaly(
-        self,
-        signature: str,
-        group: AnomalyGroup,
-        github_client: GitHubLookupClient | None,
-        docs_client: HADocsLookupClient | None,
-        community_client: CommunityLookupClient | None,
-        allow_fetch: bool,
-    ) -> tuple[
-        GitHubLookupResult | None, DocsLookupResult | None, CommunityLookupResult | None, bool
-    ]:
-        """Look up an anomaly with no built-in known-issue match online.
-
-        Checks GitHub issues, the Home Assistant docs, and the Community
-        forum together for every anomaly that needs it (each cached
-        independently). `allow_fetch` gates whether *new* network lookups
-        may happen this scan (the per-scan research budget); when it's
-        False, only already-cached results are returned. Returns
-        (github_result, docs_result, community_result, fetched) where
-        `fetched` is True if this call made any fresh network request (so
-        the caller can count it against the budget).
-        """
-        cache_ttl = timedelta(days=DEFAULT_GITHUB_CACHE_DAYS)
-        github_result = (
-            self.store.get_cached_github_result(signature, cache_ttl) if github_client else None
-        )
-        docs_result = (
-            self.store.get_cached_docs_result(signature, cache_ttl) if docs_client else None
-        )
-        community_result = (
-            self.store.get_cached_community_result(signature, cache_ttl)
-            if community_client
-            else None
-        )
-
-        needs = {
-            "github": github_client is not None and github_result is None,
-            "docs": docs_client is not None and docs_result is None,
-            "community": community_client is not None and community_result is None,
-        }
-        if not any(needs.values()) or not allow_fetch:
-            return github_result, docs_result, community_result, False
-
-        tasks: dict[str, asyncio.Task] = {}
-        if needs["github"]:
-            tasks["github"] = asyncio.ensure_future(
-                github_client.search_issues(group.logger, group.example_message)
-            )
-        if needs["docs"]:
-            tasks["docs"] = asyncio.ensure_future(
-                docs_client.search(group.logger, group.example_message)
-            )
-        if needs["community"]:
-            tasks["community"] = asyncio.ensure_future(
-                community_client.search(group.logger, group.example_message)
-            )
-
-        fetched_results = await asyncio.gather(*tasks.values())
-        fetched = dict(zip(tasks.keys(), fetched_results, strict=True))
-
-        if "github" in fetched:
-            github_result = fetched["github"]
-            self.store.store_github_result(signature, github_result)
-        if "docs" in fetched:
-            docs_result = fetched["docs"]
-            self.store.store_docs_result(signature, docs_result)
-        if "community" in fetched:
-            community_result = fetched["community"]
-            self.store.store_community_result(signature, community_result)
-
-        return github_result, docs_result, community_result, True
 
     def _read_log_lines(self) -> list[str]:
         try:

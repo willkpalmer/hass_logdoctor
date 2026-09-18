@@ -3,15 +3,12 @@
     "step": {
       "user": {
         "title": "Set up Log Doctor",
-        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base and (optionally) live research on the Home Assistant docs, Community forum, and GitHub, and reports what it finds. It never changes your configuration.",
+        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Use the separate companion app to research unmatched anomalies with Claude.",
         "data": {
           "log_path": "Log file path",
           "scan_time": "Daily scan time",
           "min_severity": "Minimum severity to report",
           "lookback_hours": "Lookback window on first scan (hours)",
-          "enable_github_lookup": "Research unmatched anomalies online (Home Assistant docs, Community forum, GitHub)",
-          "github_token": "GitHub personal access token (optional, raises GitHub's rate limit only)",
-          "max_github_queries": "Max anomalies researched online per scan",
           "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional",
           "report_retention_days": "Days to keep old report files on disk",
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)"
@@ -31,9 +28,6 @@
           "scan_time": "Daily scan time",
           "min_severity": "Minimum severity to report",
           "lookback_hours": "Lookback window on first scan (hours)",
-          "enable_github_lookup": "Research unmatched anomalies online (Home Assistant docs, Community forum, GitHub)",
-          "github_token": "GitHub personal access token (optional, raises GitHub's rate limit only)",
-          "max_github_queries": "Max anomalies researched online per scan",
           "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional",
           "report_retention_days": "Days to keep old report files on disk",
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)"
