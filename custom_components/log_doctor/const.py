@@ -12,6 +12,7 @@ DEFAULT_SCAN_MINUTE = 0
 DEFAULT_LOOKBACK_HOURS = 24
 DEFAULT_MIN_SEVERITY = "WARNING"
 DEFAULT_REPORT_RETENTION_DAYS = 30
+DEFAULT_MAX_INVESTIGATED = 15
 
 CONF_LOG_PATH = "log_path"
 CONF_SCAN_TIME = "scan_time"
@@ -21,6 +22,8 @@ CONF_MIN_SEVERITY = "min_severity"
 CONF_REPORT_RETENTION_DAYS = "report_retention_days"
 CONF_INCLUDE_SUPERVISOR_LOGS = "include_supervisor_logs"
 DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
+CONF_OPENAI_API_KEY = "openai_api_key"
+CONF_MAX_INVESTIGATED = "max_investigated"
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -37,6 +40,7 @@ SEVERITY_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4
 SIGNAL_SCAN_COMPLETE = f"{DOMAIN}_scan_complete"
 
 NOTIFICATION_ID = "log_doctor_daily_report"
+NOTIFICATION_ID_INVESTIGATION = "log_doctor_investigation_report"
 
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"
@@ -51,6 +55,7 @@ ATTR_REPORTS_DIR = "reports_dir"
 
 REPORTS_DIR_NAME = "log_doctor_reports"
 LATEST_REPORT_FILENAME = "latest.md"
+LATEST_FINDINGS_FILENAME = "latest.findings.md"
 # Sensor attributes are stored in the state machine and recorder; keep the
 # embedded report text bounded so a very large scan doesn't bloat either.
 # The full, untruncated report is always on disk in REPORTS_DIR_NAME.

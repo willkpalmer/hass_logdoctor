@@ -15,6 +15,8 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
     TimeSelector,
 )
 
@@ -22,12 +24,15 @@ from .const import (
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
+    CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
+    CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
+    DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
@@ -79,6 +84,15 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                     CONF_INCLUDE_SUPERVISOR_LOGS, DEFAULT_INCLUDE_SUPERVISOR_LOGS
                 ),
             ): BooleanSelector(),
+            vol.Optional(
+                CONF_OPENAI_API_KEY, default=defaults.get(CONF_OPENAI_API_KEY, "")
+            ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Required(
+                CONF_MAX_INVESTIGATED,
+                default=defaults.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED),
+            ): NumberSelector(
+                NumberSelectorConfig(min=0, max=100, step=1, mode=NumberSelectorMode.BOX)
+            ),
         }
     )
 

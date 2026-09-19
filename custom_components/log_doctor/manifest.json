@@ -6,7 +6,7 @@
   "documentation": "https://github.com/willkpalmer/hass_logdoctor",
   "issue_tracker": "https://github.com/willkpalmer/hass_logdoctor/issues",
   "iot_class": "local_polling",
-  "requirements": [],
+  "requirements": ["openai>=1.0"],
   "single_config_entry": true,
-  "version": "0.6.2"
+  "version": "0.7.0"
 }

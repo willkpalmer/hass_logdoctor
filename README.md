@@ -3,9 +3,12 @@
 A Home Assistant custom integration that periodically reads your Home
 Assistant log, groups the warnings/errors it finds into anomalies, checks
 them against a built-in knowledge base, and reports everything it finds
-once a day - as plain data, not a guess at what it means. A separate
-[companion app](#companion-app) can then research each anomaly with an
-OpenAI model, on demand, whenever you want.
+once a day - as plain data, not a guess at what it means. When you give it
+an OpenAI API key, it then automatically runs an
+[investigation stage](#investigation-stage) against that report, right
+after every scan. A separate [companion app](#companion-app) offers the
+same research on demand instead, against any report file, whenever you
+want it.
 
 **Log Doctor never modifies your configuration, restarts anything, or
 applies any fix automatically.** It is strictly read-only / report-only,
@@ -53,10 +56,16 @@ report, never a change.
      dashboards/automations.
    - Optionally, a short push notification via any `notify.*` mobile app
      service.
-6. That's it - Log Doctor itself never guesses at what an anomaly means or
-   how to fix it beyond the built-in knowledge base. For anything not
-   covered there, run the [companion app](#companion-app) against the
-   report whenever you want an actual diagnosis.
+6. **If you've configured an OpenAI API key**, the scan's report then
+   automatically goes through the
+   [investigation stage](#investigation-stage): every anomaly gets
+   researched by an OpenAI model, and a **second, separate persistent
+   notification** appears once that finishes - independent of the scan's
+   own notification, since investigating can take a while. Without a key,
+   Log Doctor never guesses at what an anomaly means or how to fix it
+   beyond the built-in knowledge base - run the
+   [companion app](#companion-app) by hand instead whenever you want that
+   diagnosis.
 
 ## Installation
 
@@ -90,6 +99,13 @@ report, never a change.
    - **Check Supervisor/Host/add-on logs** — on by default; only has any
      effect on Home Assistant OS/Supervised installs (see
      [Supervisor-managed logs](#supervisor-managed-logs) below).
+   - **OpenAI API key** — optional; set this to turn on the automatic
+     [investigation stage](#investigation-stage) after every scan. Leave
+     it blank to skip investigation entirely (the companion app remains
+     available on demand either way).
+   - **Max anomalies investigated per scan** — a per-scan cap on OpenAI
+     calls, so one very noisy scan can't run away with your API bill. Only
+     used when an OpenAI API key is set.
 
 All of these can be changed later from the integration's **Configure**
 button.
@@ -141,7 +157,38 @@ folder with the Studio Code Server / File editor add-on, Samba, or SSH to
 see the full history, including every "nothing found" run and exactly what
 was checked. Files older than the configured retention window (default 30
 days) are pruned automatically; `latest.md` is never pruned. This is also
-the file the [companion app](#companion-app) reads.
+the file the [investigation stage](#investigation-stage) and the
+[companion app](#companion-app) both read.
+
+## Investigation stage
+
+When an OpenAI API key is configured, Log Doctor automatically researches
+every anomaly in each scan's report - right after the scan finishes,
+against the report it just wrote - using the same approach as the
+[companion app](#companion-app): an OpenAI model (`gpt-6-astra`) with web
+search enabled, asked to explain what each error means, what's likely
+causing it, and how to troubleshoot or resolve it.
+
+This runs as its own background step, separate from the scan itself, so a
+slow investigation (one OpenAI call per anomaly) never delays the scan's
+own notification or the `scan_now` service call returning. When it
+finishes, it posts its **own persistent notification** - distinct from the
+scan's - whether it found something, had nothing to investigate, or
+failed (e.g. a bad API key), so you always know the stage ran. Findings
+are written to disk next to the report, the same way the report itself is:
+`log_doctor_report_*.findings.md` per run, plus a `latest.findings.md` that
+always mirrors the most recent one, pruned on the same retention window as
+reports.
+
+The **max anomalies investigated per scan** setting (default 15) caps how
+many OpenAI calls one scan can trigger - anomalies beyond the cap are
+simply skipped for that run (noted in the notification), not queued or
+carried over.
+
+This is entirely optional - leave the OpenAI API key blank and Log Doctor
+behaves exactly as it does without it, reporting only raw data and its
+built-in knowledge-base matches. Automatic investigation and the companion
+app are independent of each other; use one, the other, or both.
 
 ## Companion app
 

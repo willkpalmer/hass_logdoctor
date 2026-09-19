@@ -1,19 +1,22 @@
 """The scan engine that ties log parsing together with the built-in
-knowledge base.
+knowledge base, and (optionally) triggers the investigation stage.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
+    DEFAULT_MAX_INVESTIGATED,
     DEFAULT_REPORT_RETENTION_DAYS,
     DOMAIN,
     NOTIFICATION_ID,
+    NOTIFICATION_ID_INVESTIGATION,
 )
 from .digest import (
     AnomalyReport,
@@ -24,6 +27,7 @@ from .digest import (
     build_notification_digest,
 )
 from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
+from .investigation import async_investigate_report
 from .knowledge_base import match_known_issue
 from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
 from .report_files import async_write_report
@@ -49,6 +53,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         mobile_notify_service: str | None,
         report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS,
         include_supervisor_logs: bool = DEFAULT_INCLUDE_SUPERVISOR_LOGS,
+        openai_api_key: str | None = None,
+        max_investigated: int = DEFAULT_MAX_INVESTIGATED,
         store: LogDoctorStore,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
@@ -59,6 +65,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.mobile_notify_service = mobile_notify_service
         self.report_retention_days = report_retention_days
         self.include_supervisor_logs = include_supervisor_logs
+        self.openai_api_key = openai_api_key
+        self.max_investigated = max_investigated
         self.store = store
 
     async def _async_update_data(self) -> ScanResult:
@@ -127,6 +135,10 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         await self.store.async_save()
 
         await self._async_notify(result)
+
+        if self.openai_api_key and result.reports and result.report_file:
+            self.hass.async_create_task(self._async_investigate(result))
+
         return result
 
     def _read_log_lines(self) -> list[str]:
@@ -164,3 +176,60 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     "Failed to send mobile notification via notify.%s",
                     self.mobile_notify_service,
                 )
+
+    async def _async_investigate(self, result: ScanResult) -> None:
+        """Run the investigation stage against the report this scan just wrote.
+
+        Scheduled as its own background task (never awaited by _async_scan)
+        so a slow investigation - one OpenAI call per anomaly - never delays
+        the scan itself or the "Scan now" service call returning. Always
+        posts its own persistent notification when it finishes, separate
+        from the scan's, whether it found something, found nothing to
+        investigate, or failed.
+        """
+        try:
+            investigation = await async_investigate_report(
+                self.hass,
+                Path(result.report_file),
+                self.openai_api_key,
+                self.max_investigated,
+                self.report_retention_days,
+            )
+        except Exception:  # noqa: BLE001 - never let a bad investigation go unreported
+            _LOGGER.exception("Log Doctor investigation stage failed unexpectedly")
+            investigation = None
+
+        title = f"Log Doctor Investigation - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
+
+        if investigation is None:
+            message = "⚠️ The investigation stage failed unexpectedly. Check the Home Assistant log for details."
+        elif investigation.error:
+            message = f"⚠️ Investigation failed: {investigation.error}"
+        elif investigation.investigated == 0:
+            message = "No anomalies in this scan needed investigating."
+        else:
+            plural = "y" if investigation.investigated == 1 else "ies"
+            message = (
+                f"Investigated {investigation.investigated} anomal{plural} from "
+                f"`{result.report_file}`."
+            )
+            if investigation.skipped_over_cap:
+                skipped_plural = "y" if investigation.skipped_over_cap == 1 else "ies"
+                message += (
+                    f"\n\n{investigation.skipped_over_cap} more "
+                    f"anomal{skipped_plural} skipped (over the "
+                    f"{self.max_investigated}-per-scan limit)."
+                )
+            if investigation.findings_file:
+                message += f"\n\nFindings retained at `{investigation.findings_file}`."
+
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "notification_id": NOTIFICATION_ID_INVESTIGATION,
+                "title": title,
+                "message": message,
+            },
+            blocking=True,
+        )

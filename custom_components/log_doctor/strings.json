@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Set up Log Doctor",
-        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Use the separate companion app to research unmatched anomalies with an OpenAI model.",
+        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Set an OpenAI API key to also automatically investigate anomalies with an OpenAI model after each scan.",
         "data": {
           "log_path": "Log file path",
           "scan_time": "Daily scan time",
@@ -11,7 +11,9 @@
           "lookback_hours": "Lookback window on first scan (hours)",
           "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional",
           "report_retention_days": "Days to keep old report files on disk",
-          "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)"
+          "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
+          "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
+          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
         }
       }
     },
@@ -30,7 +32,9 @@
           "lookback_hours": "Lookback window on first scan (hours)",
           "mobile_notify_service": "Mobile notify service (e.g. mobile_app_pixel_10_pro_xl), optional",
           "report_retention_days": "Days to keep old report files on disk",
-          "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)"
+          "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
+          "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
+          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
         }
       }
     }

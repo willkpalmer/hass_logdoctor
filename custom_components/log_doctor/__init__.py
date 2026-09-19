@@ -3,9 +3,11 @@
 Periodically scans the Home Assistant log for warnings/errors, matches them
 against a built-in knowledge base, and reports what it finds once a day. It
 never modifies your configuration or takes any remediation action - it only
-reports. Deeper diagnosis of anomalies not covered by the built-in
-knowledge base is left to the separate companion app (see companion/),
-which researches each one with an OpenAI model.
+reports. When an OpenAI API key is configured, it also automatically
+investigates the anomalies found with an OpenAI model right after each
+scan (see investigation.py). The separate companion app (see companion/)
+offers the same research on demand, against any report file, independent
+of this automatic stage.
 """
 from __future__ import annotations
 
@@ -19,12 +21,15 @@ from .const import (
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
+    CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
+    CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
+    DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
@@ -72,6 +77,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         include_supervisor_logs=options.get(
             CONF_INCLUDE_SUPERVISOR_LOGS, DEFAULT_INCLUDE_SUPERVISOR_LOGS
         ),
+        openai_api_key=options.get(CONF_OPENAI_API_KEY) or None,
+        max_investigated=options.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED),
         store=store,
     )
 
