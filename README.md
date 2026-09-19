@@ -4,8 +4,8 @@ A Home Assistant custom integration that periodically reads your Home
 Assistant log, groups the warnings/errors it finds into anomalies, checks
 them against a built-in knowledge base, and reports everything it finds
 once a day - as plain data, not a guess at what it means. A separate
-[companion app](#companion-app) can then research each anomaly with Claude,
-on demand, whenever you want.
+[companion app](#companion-app) can then research each anomaly with an
+OpenAI model, on demand, whenever you want.
 
 **Log Doctor never modifies your configuration, restarts anything, or
 applies any fix automatically.** It is strictly read-only / report-only,
@@ -191,17 +191,35 @@ python log_doctor_companion.py /path/to/log_doctor_reports/latest.md
 
 ### What it does
 
-For each anomaly in the report, it asks Claude - with web search enabled,
-so it can check the Home Assistant docs, GitHub issues, the Community
-forum, and anywhere else that's relevant - to explain what the error
-means, what's likely causing it, and how to troubleshoot or resolve it.
-Results are written to a findings file next to the report (e.g.
-`latest.findings.md`), one section per anomaly.
+For each anomaly in the report, it asks an OpenAI model (`gpt-6-astra`,
+OpenAI's flagship reasoning model) - with web search enabled, so it can
+check the Home Assistant docs, GitHub issues, the Community forum, and
+anywhere else that's relevant - to explain what the error means, what's
+likely causing it, and how to troubleshoot or resolve it. Results are
+written to a findings file next to the report (e.g. `latest.findings.md`),
+one section per anomaly.
 
-It needs an Anthropic API key: set `ANTHROPIC_API_KEY`, or run
-`ant auth login` first. Each run calls the Claude API once per anomaly in
-the report (Claude Opus 5, with web search) - cost scales with how many
-distinct anomalies are in the report, not with log size.
+It needs an OpenAI API key, set as the `OPENAI_API_KEY` environment
+variable:
+
+- **Get a key**: [platform.openai.com](https://platform.openai.com) →
+  **Settings → API Keys** → Create new secret key.
+- **Temporary (current PowerShell window only)**:
+  ```powershell
+  $env:OPENAI_API_KEY = "sk-your-key-here"
+  ```
+- **Permanent (persists across reboots/new terminals)**:
+  ```powershell
+  setx OPENAI_API_KEY "sk-your-key-here"
+  ```
+  `setx` doesn't affect terminals/apps already open - close and reopen
+  them afterward. You can also set it via **Start menu → "environment
+  variables" → Edit environment variables for your account → New...**
+  under "User variables".
+
+Each run calls the OpenAI API once per anomaly in the report (with web
+search) - cost scales with how many distinct anomalies are in the report,
+not with log size.
 
 ## Entities
 

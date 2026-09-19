@@ -3,14 +3,14 @@
 
 Run this separately, whenever you want, against a report the Log Doctor
 Home Assistant integration wrote to `log_doctor_reports/`. It reads that
-markdown report, asks Claude to research each listed anomaly (with web
-search enabled, so it can check the Home Assistant docs, GitHub issues,
-and the Community forum), and writes a findings file alongside the report
-with a plain-English explanation and troubleshooting suggestions for each
-one.
+markdown report, asks an OpenAI model to research each listed anomaly
+(with web search enabled, so it can check the Home Assistant docs, GitHub
+issues, and the Community forum), and writes a findings file alongside the
+report with a plain-English explanation and troubleshooting suggestions
+for each one.
 
 Log Doctor itself only lists raw log data - it never summarizes or
-diagnoses. All of that happens here, on demand, driven by Claude.
+diagnoses. All of that happens here, on demand.
 
 Usage:
     python log_doctor_companion.py [path/to/report.md] [-o output.md]
@@ -18,8 +18,7 @@ Usage:
 With no path given, you'll be prompted for one (defaulting to
 `log_doctor_reports/latest.md` if it exists).
 
-Requires the `anthropic` package and an Anthropic API key: set
-ANTHROPIC_API_KEY, or run `ant auth login` first.
+Requires the `openai` package and an OpenAI API key: set OPENAI_API_KEY.
 """
 from __future__ import annotations
 
@@ -29,9 +28,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import anthropic
+import openai
+from openai import OpenAI
 
-MODEL = "claude-opus-5"
+MODEL = "gpt-6-astra"
 DEFAULT_REPORT_DIR = "log_doctor_reports"
 DEFAULT_REPORT_NAME = "latest.md"
 
@@ -136,8 +136,8 @@ def resolve_report_path(cli_arg: str | None) -> Path:
     return Path(entered) if entered else default
 
 
-def research_anomaly(client: anthropic.Anthropic, anomaly: Anomaly) -> str:
-    """Ask Claude to research one anomaly and return its findings as text."""
+def research_anomaly(client: OpenAI, anomaly: Anomaly) -> str:
+    """Ask the model to research one anomaly and return its findings as text."""
     user_prompt = (
         f"Logger: {anomaly.logger}\n"
         f"Severity: {anomaly.level}\n"
@@ -146,17 +146,14 @@ def research_anomaly(client: anthropic.Anthropic, anomaly: Anomaly) -> str:
         f"Log lines:\n```\n{anomaly.log_text}\n```"
     )
 
-    response = client.messages.create(
+    response = client.responses.create(
         model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "high"},
-        tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}],
-        messages=[{"role": "user", "content": user_prompt}],
+        instructions=SYSTEM_PROMPT,
+        input=user_prompt,
+        tools=[{"type": "web_search"}],
     )
 
-    text = "\n".join(block.text for block in response.content if block.type == "text").strip()
+    text = (response.output_text or "").strip()
     return text or "No information available"
 
 
@@ -187,7 +184,7 @@ def build_findings_markdown(source_path: Path, findings: list[tuple[Anomaly, str
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Research a Log Doctor report's anomalies with Claude."
+        description="Research a Log Doctor report's anomalies with an OpenAI model."
     )
     parser.add_argument(
         "report",
@@ -213,7 +210,11 @@ def main() -> None:
         print("No anomalies found in this report - nothing to research.")
         return
 
-    client = anthropic.Anthropic()
+    try:
+        client = OpenAI()
+    except openai.OpenAIError as err:
+        print(f"\nCould not authenticate with OpenAI: {err}\nSet OPENAI_API_KEY, then try again.", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Researching {len(anomalies)} anomal{'y' if len(anomalies) == 1 else 'ies'} "
           f"from {report_path}...")
@@ -222,25 +223,15 @@ def main() -> None:
         print(f"  [{i}/{len(anomalies)}] {anomaly.logger} ({anomaly.level} x{anomaly.count})...")
         try:
             findings = research_anomaly(client, anomaly)
-        except anthropic.AuthenticationError as err:
+        except openai.AuthenticationError as err:
             print(
-                f"\nAuthentication failed: {err.message}\n"
-                "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
+                f"\nAuthentication failed: {err}\nSet OPENAI_API_KEY, then try again.",
                 file=sys.stderr,
             )
             sys.exit(1)
-        except TypeError as err:
-            # The SDK raises a bare TypeError (not AuthenticationError) when no
-            # credentials are configured at all - see the message it raises.
-            print(
-                f"\nCould not authenticate with Claude: {err}\n"
-                "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        except anthropic.APIStatusError as err:
-            findings = f"No information available (Claude API error: {err.status_code} {err.message})"
-        except anthropic.APIConnectionError as err:
+        except openai.APIStatusError as err:
+            findings = f"No information available (OpenAI API error: {err.status_code} {err.message})"
+        except openai.APIConnectionError as err:
             findings = f"No information available (network error: {err})"
         results.append((anomaly, findings))
 

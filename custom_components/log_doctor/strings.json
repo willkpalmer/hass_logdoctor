@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Set up Log Doctor",
-        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Use the separate companion app to research unmatched anomalies with Claude.",
+        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Use the separate companion app to research unmatched anomalies with an OpenAI model.",
         "data": {
           "log_path": "Log file path",
           "scan_time": "Daily scan time",

@@ -5,7 +5,7 @@ against a built-in knowledge base, and reports what it finds once a day. It
 never modifies your configuration or takes any remediation action - it only
 reports. Deeper diagnosis of anomalies not covered by the built-in
 knowledge base is left to the separate companion app (see companion/),
-which researches each one with Claude.
+which researches each one with an OpenAI model.
 """
 from __future__ import annotations
 

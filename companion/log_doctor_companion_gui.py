@@ -2,14 +2,13 @@
 """Log Doctor Companion - GUI.
 
 A simple desktop front end for log_doctor_companion.py: pick a Log Doctor
-markdown report with a file dialog, research its anomalies with Claude, and
-open the resulting findings file when it's done.
+markdown report with a file dialog, research its anomalies with an OpenAI
+model, and open the resulting findings file when it's done.
 
 Usage:
     python log_doctor_companion_gui.py
 
-Requires the `anthropic` package and an Anthropic API key: set
-ANTHROPIC_API_KEY, or run `ant auth login` first.
+Requires the `openai` package and an OpenAI API key: set OPENAI_API_KEY.
 """
 from __future__ import annotations
 
@@ -25,7 +24,8 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 try:
-    import anthropic
+    import openai
+    from openai import OpenAI
 
     from log_doctor_companion import (
         Anomaly,
@@ -194,9 +194,12 @@ class CompanionApp(tk.Tk):
         self, anomalies: list[Anomaly], input_path: Path, output_path: Path
     ) -> None:
         try:
-            client = anthropic.Anthropic()
-        except Exception as err:  # noqa: BLE001 - surface any client-construction failure
-            self._events.put(("error", f"Could not create Anthropic client: {err}"))
+            client = OpenAI()
+        except openai.OpenAIError as err:
+            self._events.put((
+                "error",
+                f"Could not authenticate with OpenAI: {err}\nSet OPENAI_API_KEY, then try again.",
+            ))
             return
 
         results: list[tuple[Anomaly, str]] = []
@@ -207,27 +210,17 @@ class CompanionApp(tk.Tk):
             )
             try:
                 findings = research_anomaly(client, anomaly)
-            except anthropic.AuthenticationError as err:
+            except openai.AuthenticationError as err:
                 self._events.put((
                     "error",
-                    f"Authentication failed: {err.message}\n"
-                    "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
+                    f"Authentication failed: {err}\nSet OPENAI_API_KEY, then try again.",
                 ))
                 return
-            except TypeError as err:
-                # The SDK raises a bare TypeError (not AuthenticationError) when no
-                # credentials are configured at all - see the message it raises.
-                self._events.put((
-                    "error",
-                    f"Could not authenticate with Claude: {err}\n"
-                    "Set ANTHROPIC_API_KEY, or run `ant auth login`, then try again.",
-                ))
-                return
-            except anthropic.APIStatusError as err:
+            except openai.APIStatusError as err:
                 findings = (
-                    f"No information available (Claude API error: {err.status_code} {err.message})"
+                    f"No information available (OpenAI API error: {err.status_code} {err.message})"
                 )
-            except anthropic.APIConnectionError as err:
+            except openai.APIConnectionError as err:
                 findings = f"No information available (network error: {err})"
             results.append((anomaly, findings))
             self._events.put(("progress", i))

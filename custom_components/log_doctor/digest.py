@@ -3,7 +3,7 @@
 Per anomaly, the report lists the raw log data (all matching occurrences,
 up to a cap) rather than any synthesized summary - that diagnosis step is
 left to the separate companion app (see companion/), which researches each
-one with Claude.
+one with an OpenAI model.
 """
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def _format_anomaly_block(report: AnomalyReport) -> str:
     """One anomaly as a heading + metadata + a fenced block of its raw log lines.
 
     Deliberately a plain data dump, not a summary - the companion app reads
-    this same structure to research each anomaly with Claude.
+    this same structure to research each anomaly with an OpenAI model.
     """
     group = report.group
     emoji = _LEVEL_EMOJI.get(group.level, "•")
