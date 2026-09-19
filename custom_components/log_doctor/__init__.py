@@ -78,7 +78,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             CONF_INCLUDE_SUPERVISOR_LOGS, DEFAULT_INCLUDE_SUPERVISOR_LOGS
         ),
         openai_api_key=options.get(CONF_OPENAI_API_KEY) or None,
-        max_investigated=options.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED),
+        # NumberSelector hands back a float, but this gets used as a list
+        # slice index in investigation.py, which requires an actual int.
+        max_investigated=int(options.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED)),
         store=store,
     )
 
