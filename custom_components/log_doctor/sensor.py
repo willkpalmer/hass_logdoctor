@@ -19,6 +19,7 @@ from .const import (
     ATTR_RECURRING_COUNT,
     ATTR_REPORT_FILE,
     ATTR_REPORTS_DIR,
+    DEVICE_NAME,
     DOMAIN,
     MAX_REPORT_ATTR_CHARS,
     REPORTS_DIR_NAME,
@@ -49,9 +50,9 @@ class LogDoctorAnomalySensor(CoordinatorEntity[LogDoctorCoordinator], SensorEnti
         self._attr_unique_id = f"{entry.entry_id}_anomalies"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Log Doctor",
+            name=DEVICE_NAME,
             manufacturer="hass_logdoctor",
-            model="Log Doctor",
+            model=DEVICE_NAME,
             entry_type=DeviceEntryType.SERVICE,
         )
 

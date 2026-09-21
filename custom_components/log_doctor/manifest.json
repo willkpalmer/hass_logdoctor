@@ -1,6 +1,6 @@
 {
   "domain": "log_doctor",
-  "name": "Log Doctor",
+  "name": "WP Log Doctor",
   "codeowners": ["@willkpalmer"],
   "config_flow": true,
   "documentation": "https://github.com/willkpalmer/hass_logdoctor",

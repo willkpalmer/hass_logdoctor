@@ -4,6 +4,8 @@ from __future__ import annotations
 DOMAIN = "log_doctor"
 PLATFORMS = ["sensor", "button", "switch"]
 
+DEVICE_NAME = "WP Log Doctor"
+
 STORAGE_VERSION = 1
 STORAGE_KEY_PREFIX = "log_doctor"
 

@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up Log Doctor",
-        "description": "Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Set an OpenAI API key to also automatically investigate anomalies with an OpenAI model after each scan.",
+        "title": "Set up WP Log Doctor",
+        "description": "WP Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Set an OpenAI API key to also automatically investigate anomalies with an OpenAI model after each scan.",
         "data": {
           "log_path": "Log file path",
           "scan_time": "Daily scan time",
@@ -18,13 +18,13 @@
       }
     },
     "abort": {
-      "already_configured": "Log Doctor is already configured."
+      "already_configured": "WP Log Doctor is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Log Doctor settings",
+        "title": "WP Log Doctor settings",
         "data": {
           "log_path": "Log file path",
           "scan_time": "Daily scan time",

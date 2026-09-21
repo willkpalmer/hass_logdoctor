@@ -8,7 +8,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DEVICE_NAME, DOMAIN
 from .coordinator import LogDoctorCoordinator
 
 
@@ -31,9 +31,9 @@ class LogDoctorScanNowButton(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_scan_now"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Log Doctor",
+            name=DEVICE_NAME,
             manufacturer="hass_logdoctor",
-            model="Log Doctor",
+            model=DEVICE_NAME,
             entry_type=DeviceEntryType.SERVICE,
         )
 
