@@ -223,12 +223,17 @@ extra install) with:
 
 - **Input report** — **Browse...** opens a file picker for the markdown
   report (starts in `log_doctor_reports/` if that exists next to where
-  you ran it from).
+  you ran it from). Picking a report lists its anomalies below as
+  checkboxes.
 - **Output file** — defaults to the input file's own folder (e.g.
   `latest.md` → `latest.findings.md`), with its own **Browse...** to save
   somewhere else instead.
-- **Process** — researches every anomaly in the input file, showing
-  progress and a running log as it goes.
+- **Anomalies** — every anomaly in the report, each with its own
+  checkbox (checked by default), plus **Select all** / **Select none**.
+  Uncheck anything you've already investigated or don't care about, so
+  you only spend OpenAI credits on the ones you actually want researched.
+- **Investigate selected** — researches only the checked anomalies,
+  showing progress and a running log as it goes.
 - **View output** — enabled once processing finishes; opens the findings
   file in your system's default app for it.
 

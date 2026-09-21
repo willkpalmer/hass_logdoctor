@@ -2,8 +2,9 @@
 """Log Doctor Companion - GUI.
 
 A simple desktop front end for log_doctor_companion.py: pick a Log Doctor
-markdown report with a file dialog, research its anomalies with an OpenAI
-model, and open the resulting findings file when it's done.
+markdown report with a file dialog, choose which of its anomalies to
+research with an OpenAI model, and open the resulting findings file when
+it's done.
 
 Usage:
     python log_doctor_companion_gui.py
@@ -61,13 +62,14 @@ class CompanionApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Log Doctor Companion")
-        self.geometry("760x520")
-        self.minsize(600, 380)
+        self.geometry("780x640")
+        self.minsize(620, 480)
 
         self._input_path: Path | None = None
         self._output_path: Path | None = None
         self._worker: threading.Thread | None = None
         self._events: queue.Queue = queue.Queue()
+        self._anomaly_vars: list[tuple[Anomaly, tk.BooleanVar]] = []
 
         self._build_widgets()
         self.after(100, self._poll_events)
@@ -97,9 +99,46 @@ class CompanionApp(tk.Tk):
         self.output_button = ttk.Button(form, text="Browse...", command=self._choose_output)
         self.output_button.grid(row=1, column=2, pady=(6, 0))
 
+        anomalies_box = ttk.LabelFrame(self, text="Anomalies - select which ones to investigate")
+        anomalies_box.pack(fill="both", expand=True, **pad)
+
+        select_buttons = ttk.Frame(anomalies_box)
+        select_buttons.pack(fill="x", padx=6, pady=(6, 0))
+        self.select_all_button = ttk.Button(
+            select_buttons, text="Select all", command=self._select_all
+        )
+        self.select_all_button.pack(side="left")
+        self.select_none_button = ttk.Button(
+            select_buttons, text="Select none", command=self._select_none
+        )
+        self.select_none_button.pack(side="left", padx=(6, 0))
+        self.selection_var = tk.StringVar(value="Choose a report to list its anomalies.")
+        ttk.Label(select_buttons, textvariable=self.selection_var).pack(side="left", padx=(12, 0))
+
+        list_area = ttk.Frame(anomalies_box)
+        list_area.pack(fill="both", expand=True, padx=6, pady=6)
+
+        self.anomaly_canvas = tk.Canvas(list_area, highlightthickness=0)
+        anomaly_scrollbar = ttk.Scrollbar(
+            list_area, orient="vertical", command=self.anomaly_canvas.yview
+        )
+        self.anomaly_list_frame = ttk.Frame(self.anomaly_canvas)
+        self.anomaly_list_frame.bind(
+            "<Configure>",
+            lambda _e: self.anomaly_canvas.configure(
+                scrollregion=self.anomaly_canvas.bbox("all")
+            ),
+        )
+        self.anomaly_canvas.create_window((0, 0), window=self.anomaly_list_frame, anchor="nw")
+        self.anomaly_canvas.configure(yscrollcommand=anomaly_scrollbar.set)
+        self.anomaly_canvas.pack(side="left", fill="both", expand=True)
+        anomaly_scrollbar.pack(side="right", fill="y")
+
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", **pad)
-        self.process_button = ttk.Button(buttons, text="Process", command=self._start_processing)
+        self.process_button = ttk.Button(
+            buttons, text="Investigate selected", command=self._start_processing
+        )
         self.process_button.pack(side="left")
         self.view_button = ttk.Button(
             buttons, text="View output", command=self._view_output, state="disabled"
@@ -135,7 +174,59 @@ class CompanionApp(tk.Tk):
         self.output_var.set(str(self._output_path))
 
         self.view_button.config(state="disabled")
-        self.status_var.set("Ready to process.")
+        self._load_anomalies()
+
+    def _load_anomalies(self) -> None:
+        for child in self.anomaly_list_frame.winfo_children():
+            child.destroy()
+        self._anomaly_vars = []
+
+        try:
+            text = self._input_path.read_text(encoding="utf-8")
+        except OSError as err:
+            messagebox.showerror("Log Doctor Companion", f"Could not read report: {err}")
+            self.status_var.set("Could not read report.")
+            return
+
+        anomalies = parse_report(text)
+        if not anomalies:
+            ttk.Label(self.anomaly_list_frame, text="No anomalies found in this report.").pack(
+                anchor="w", padx=4, pady=4
+            )
+            self.selection_var.set("0 selected")
+            self.status_var.set("No anomalies found.")
+            return
+
+        for anomaly in anomalies:
+            var = tk.BooleanVar(value=True)
+            label = (
+                f"{anomaly.level} x{anomaly.count} - {anomaly.logger}  "
+                f"(first seen {anomaly.first_seen}, last seen {anomaly.last_seen})"
+            )
+            ttk.Checkbutton(
+                self.anomaly_list_frame,
+                text=label,
+                variable=var,
+                command=self._update_selection_label,
+            ).pack(anchor="w", padx=4, pady=2)
+            self._anomaly_vars.append((anomaly, var))
+
+        self._update_selection_label()
+        self.status_var.set(f"Loaded {len(anomalies)} anomalies - select which to investigate.")
+
+    def _select_all(self) -> None:
+        for _anomaly, var in self._anomaly_vars:
+            var.set(True)
+        self._update_selection_label()
+
+    def _select_none(self) -> None:
+        for _anomaly, var in self._anomaly_vars:
+            var.set(False)
+        self._update_selection_label()
+
+    def _update_selection_label(self) -> None:
+        selected = sum(1 for _anomaly, var in self._anomaly_vars if var.get())
+        self.selection_var.set(f"{selected} of {len(self._anomaly_vars)} selected")
 
     def _choose_output(self) -> None:
         initial_dir = str(self._output_path.parent) if self._output_path else str(Path.cwd())
@@ -166,16 +257,11 @@ class CompanionApp(tk.Tk):
             )
             self.output_var.set(str(self._output_path))
 
-        try:
-            text = self._input_path.read_text(encoding="utf-8")
-        except OSError as err:
-            messagebox.showerror("Log Doctor Companion", f"Could not read report: {err}")
-            return
-
-        anomalies = parse_report(text)
+        anomalies = [anomaly for anomaly, var in self._anomaly_vars if var.get()]
         if not anomalies:
-            self._append_log("No anomalies found in this report - nothing to research.")
-            self.status_var.set("No anomalies found.")
+            messagebox.showerror(
+                "Log Doctor Companion", "Select at least one anomaly to investigate."
+            )
             return
 
         self._set_busy(True)
@@ -266,6 +352,10 @@ class CompanionApp(tk.Tk):
         self.process_button.config(state=state)
         self.input_button.config(state=state)
         self.output_button.config(state=state)
+        self.select_all_button.config(state=state)
+        self.select_none_button.config(state=state)
+        for child in self.anomaly_list_frame.winfo_children():
+            child.config(state=state)
 
     def _append_log(self, message: str) -> None:
         self.log.config(state="normal")
