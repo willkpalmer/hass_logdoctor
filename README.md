@@ -76,6 +76,18 @@ report, never a change.
    **Integration**.
 3. Install **Log Doctor**, then restart Home Assistant.
 
+The brand icon (`custom_components/log_doctor/brand/`) shows up correctly on
+the Settings → Devices & Services page (HA 2026.3+ reads it directly from
+the installed integration), but HACS's own repository list/download panel
+currently shows "icon not available" for all custom integrations that ship
+icons this way - `home-assistant/brands` no longer accepts new custom
+integration submissions, and HACS's dashboard hasn't yet switched to reading
+the local icon. This is a known HACS bug
+([hacs/integration#5223](https://github.com/hacs/integration/issues/5223)),
+not something wrong with this repository; a fix is up as
+[hacs/integration#5228](https://github.com/hacs/integration/pull/5228) and
+[hacs/frontend#937](https://github.com/hacs/frontend/pull/937).
+
 ### Manual
 
 1. Copy `custom_components/log_doctor` into your Home Assistant

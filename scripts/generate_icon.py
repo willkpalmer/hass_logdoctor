@@ -14,11 +14,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-OUTPUT_PATH = (
+BRAND_DIR = (
     Path(__file__).resolve().parent.parent
-    / "custom_components" / "log_doctor" / "brand" / "icon.png"
+    / "custom_components" / "log_doctor" / "brand"
 )
 
+# Home Assistant's brand image spec: icon.png at 256x256, plus a 512x512
+# icon@2x.png for hDPI displays. https://developers.home-assistant.io/docs/core/integration/brand_images
 SIZE = 512
 S = SIZE  # shorthand
 
@@ -268,8 +270,15 @@ def main() -> None:
     )
     img = Image.alpha_composite(img, ring)
 
-    img.save(OUTPUT_PATH)
-    print(f"saved {OUTPUT_PATH}")
+    BRAND_DIR.mkdir(parents=True, exist_ok=True)
+
+    icon_2x_path = BRAND_DIR / "icon@2x.png"
+    img.save(icon_2x_path)
+    print(f"saved {icon_2x_path}")
+
+    icon_path = BRAND_DIR / "icon.png"
+    img.resize((256, 256), Image.LANCZOS).save(icon_path)
+    print(f"saved {icon_path}")
 
 
 if __name__ == "__main__":
