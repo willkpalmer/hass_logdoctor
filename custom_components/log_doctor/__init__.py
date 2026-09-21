@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
+    DEVICE_NAME,
     DOMAIN,
     PLATFORMS,
     SERVICE_CLEAR_HISTORY,
@@ -56,6 +57,12 @@ def _parse_scan_time(value: str) -> tuple[int, int, int]:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Log Doctor from a config entry."""
+    # Entries created before the "WP" rename keep their original title
+    # forever unless updated explicitly - the manifest/config_flow rename
+    # only affects newly created entries.
+    if entry.title == "Log Doctor":
+        hass.config_entries.async_update_entry(entry, title=DEVICE_NAME)
+
     options = {**entry.data, **entry.options}
 
     store = LogDoctorStore(hass, entry.entry_id)
