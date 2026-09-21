@@ -162,12 +162,21 @@ the file the [investigation stage](#investigation-stage) and the
 
 ## Investigation stage
 
-When an OpenAI API key is configured, Log Doctor automatically researches
-every anomaly in each scan's report - right after the scan finishes,
-against the report it just wrote - using the same approach as the
-[companion app](#companion-app): an OpenAI model (`gpt-6-astra`) with web
-search enabled, asked to explain what each error means, what's likely
+When an OpenAI API key is configured **and** the `switch.log_doctor_auto_
+investigate` entity is on (on by default), Log Doctor automatically
+researches every anomaly in each scan's report - right after the scan
+finishes, against the report it just wrote - using the same approach as
+the [companion app](#companion-app): an OpenAI model (`gpt-6-astra`) with
+web search enabled, asked to explain what each error means, what's likely
 causing it, and how to troubleshoot or resolve it.
+
+Investigating isn't free - it's one OpenAI call per anomaly, every scan.
+The **Auto-investigate** switch lets you pause that without clearing the
+API key: flip it off to stop automatic runs (e.g. while iterating on
+something noisy that's generating lots of anomalies), then back on when
+you want them again. Its state persists across restarts. This is separate
+from the OpenAI API key setting: the key is what makes investigation
+*possible*, the switch is whether it *actually runs* right now.
 
 This runs as its own background step, separate from the scan itself, so a
 slow investigation (one OpenAI call per anomaly) never delays the scan's
@@ -274,6 +283,7 @@ not with log size.
 | --- | --- |
 | `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full anomaly list (message, count, level, known fix if matched in the built-in knowledge base, first/last seen), scan stats (lines read, knowledge-base matches), which log sources were checked and how many lines each returned (`sources_checked`), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
 | `button.log_doctor_scan_now` | Triggers an immediate scan outside the daily schedule. |
+| `switch.log_doctor_auto_investigate` | On by default. Turns the automatic [investigation stage](#investigation-stage) on or off after each scan; only has any effect when an OpenAI API key is configured. State persists across restarts. |
 
 ## Services
 

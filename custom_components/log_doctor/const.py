@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "log_doctor"
-PLATFORMS = ["sensor", "button"]
+PLATFORMS = ["sensor", "button", "switch"]
 
 STORAGE_VERSION = 1
 STORAGE_KEY_PREFIX = "log_doctor"

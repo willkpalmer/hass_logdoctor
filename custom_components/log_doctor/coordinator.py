@@ -136,7 +136,12 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         await self._async_notify(result)
 
-        if self.openai_api_key and result.reports and result.report_file:
+        if (
+            self.openai_api_key
+            and self.store.data.auto_investigate
+            and result.reports
+            and result.report_file
+        ):
             self.hass.async_create_task(self._async_investigate(result))
 
         return result

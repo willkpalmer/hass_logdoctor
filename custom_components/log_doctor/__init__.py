@@ -3,11 +3,12 @@
 Periodically scans the Home Assistant log for warnings/errors, matches them
 against a built-in knowledge base, and reports what it finds once a day. It
 never modifies your configuration or takes any remediation action - it only
-reports. When an OpenAI API key is configured, it also automatically
-investigates the anomalies found with an OpenAI model right after each
-scan (see investigation.py). The separate companion app (see companion/)
-offers the same research on demand, against any report file, independent
-of this automatic stage.
+reports. When an OpenAI API key is configured and the "Auto-investigate"
+switch is on (see switch.py), it also automatically investigates the
+anomalies found with an OpenAI model right after each scan (see
+investigation.py). The separate companion app (see companion/) offers the
+same research on demand, against any report file, independent of this
+automatic stage.
 """
 from __future__ import annotations
 
