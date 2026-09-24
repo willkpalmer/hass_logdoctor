@@ -56,7 +56,10 @@ report, never a change.
      dashboards/automations.
    - Optionally, a short push notification via any `notify.*` mobile app
      service.
-6. **If you've configured an OpenAI API key**, the scan's report then
+6. **Separately from the daily scan, it watches every automation run in
+   real time** and posts a persistent notification the moment one fails -
+   see [Automation failure alerts](#automation-failure-alerts) below.
+7. **If you've configured an OpenAI API key**, the scan's report then
    automatically goes through the
    [investigation stage](#investigation-stage): every anomaly gets
    researched by an OpenAI model, and a **second, separate persistent
@@ -111,6 +114,8 @@ not something wrong with this repository; a fix is up as
    - **Check Supervisor/Host/add-on logs** — on by default; only has any
      effect on Home Assistant OS/Supervised installs (see
      [Supervisor-managed logs](#supervisor-managed-logs) below).
+   - **Notify me when any automation fails** — on by default; see
+     [Automation failure alerts](#automation-failure-alerts) below.
    - **OpenAI API key** — optional; set this to turn on the automatic
      [investigation stage](#investigation-stage) after every scan. Leave
      it blank to skip investigation entirely (the companion app remains
@@ -121,6 +126,42 @@ not something wrong with this repository; a fix is up as
 
 All of these can be changed later from the integration's **Configure**
 button.
+
+## Automation failure alerts
+
+With **Notify me when any automation fails** on (the default), Log Doctor
+watches every automation run as it happens - not just at the daily scan -
+and posts a persistent notification within a couple of seconds of any run
+failing: an action that raised an error, a service that doesn't exist, a
+template that couldn't be rendered, invalid service data, and so on.
+
+- There's **one notification per automation**
+  (`log_doctor_automation_failure_<object_id>`), titled
+  "Automation failed: <name>". If the same automation fails again, its
+  notification is replaced with the latest failure (and a count of how many
+  times it has failed since Home Assistant started) rather than stacking up
+  a new one each time.
+- Each notification lists the error(s) from that run and links straight to
+  the automation's trace, when the automation has an `id` (every automation
+  created in the UI does).
+- Like everything else here it's report-only: the automation itself is
+  never touched.
+
+How it works: Home Assistant doesn't fire an event when an automation
+fails, but every automation logs its failures at `ERROR` through its own
+logger (`homeassistant.components.automation.<object_id>`). Log Doctor
+listens on that logger directly, so it sees failures immediately without
+reading the log file. That also means:
+
+- Runs that stop on purpose - conditions not met, a `stop` action (even
+  with `error: true`), or a run skipped because the automation is already
+  running in `single` mode - aren't reported, since none of those log an
+  error.
+- A step marked `continue_on_error: true` that fails *is* reported, even
+  though the rest of the run carries on - Home Assistant still logs the
+  step's error.
+- If you've raised the log level of `homeassistant.components.automation`
+  above `ERROR` in your `logger:` configuration, failures won't be seen.
 
 ## Supervisor-managed logs
 

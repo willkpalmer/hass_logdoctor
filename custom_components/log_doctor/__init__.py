@@ -3,8 +3,10 @@
 Periodically scans the Home Assistant log for warnings/errors, matches them
 against a built-in knowledge base, and reports what it finds once a day. It
 never modifies your configuration or takes any remediation action - it only
-reports. When an OpenAI API key is configured and the "Auto-investigate"
-switch is on (see switch.py), it also automatically investigates the
+reports. Separately, it watches every automation run in real time and
+posts a persistent notification whenever one fails (see
+automation_monitor.py). When an OpenAI API key is configured and the
+"Auto-investigate" switch is on (see switch.py), it also automatically investigates the
 anomalies found with an OpenAI model right after each scan (see
 investigation.py). The separate companion app (see companion/) offers the
 same research on demand, against any report file, independent of this
@@ -25,6 +27,7 @@ from .const import (
     CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
+    CONF_MONITOR_AUTOMATIONS,
     CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
@@ -32,6 +35,7 @@ from .const import (
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
+    DEFAULT_MONITOR_AUTOMATIONS,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
@@ -41,6 +45,7 @@ from .const import (
     SERVICE_CLEAR_HISTORY,
     SERVICE_SCAN_NOW,
 )
+from .automation_monitor import AutomationFailureMonitor
 from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
 from .store import LogDoctorStore
@@ -108,6 +113,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, _scheduled_scan, hour=hour, minute=minute, second=second
     )
     entry.async_on_unload(unsub_time)
+
+    if options.get(CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS):
+        entry.async_on_unload(AutomationFailureMonitor(hass).async_start())
 
     async def _async_scan_now(_call: ServiceCall) -> None:
         await coordinator.async_request_refresh()

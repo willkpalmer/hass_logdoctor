@@ -26,6 +26,8 @@ CONF_INCLUDE_SUPERVISOR_LOGS = "include_supervisor_logs"
 DEFAULT_INCLUDE_SUPERVISOR_LOGS = True
 CONF_OPENAI_API_KEY = "openai_api_key"
 CONF_MAX_INVESTIGATED = "max_investigated"
+CONF_MONITOR_AUTOMATIONS = "monitor_automations"
+DEFAULT_MONITOR_AUTOMATIONS = True
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -43,6 +45,8 @@ SIGNAL_SCAN_COMPLETE = f"{DOMAIN}_scan_complete"
 
 NOTIFICATION_ID = "log_doctor_daily_report"
 NOTIFICATION_ID_INVESTIGATION = "log_doctor_investigation_report"
+# One notification per failing automation, suffixed with its object_id.
+NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX = "log_doctor_automation_failure_"
 
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"
