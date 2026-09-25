@@ -25,10 +25,9 @@ from datetime import datetime
 from typing import Callable
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.util import slugify
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
+from .mobile_push import resolve_mobile_app_notify_service
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -186,7 +185,7 @@ class AutomationFailureMonitor:
         tag: str,
     ) -> None:
         """Send a short push notification to the chosen Mobile App device."""
-        service = self._mobile_app_notify_service()
+        service = resolve_mobile_app_notify_service(self.hass, self.notify_device_id)
         if service is None:
             _LOGGER.warning(
                 "Can't send automation failure push: the chosen Mobile App "
@@ -220,26 +219,3 @@ class AutomationFailureMonitor:
             )
         except Exception:  # noqa: BLE001 - never let a notification failure escalate
             _LOGGER.exception("Failed to send automation failure push via notify.%s", service)
-
-    def _mobile_app_notify_service(self) -> str | None:
-        """Resolve the chosen device to its notify.mobile_app_* service name.
-
-        The Mobile App integration names each phone's notify service after
-        the device name the app registered with (not any name the device
-        was later renamed to in the UI), i.e. "mobile_app_<slug of that
-        name>" - the same name shown in Developer Tools > Actions.
-        """
-        device = dr.async_get(self.hass).async_get(self.notify_device_id)
-        if device is None:
-            return None
-        for entry_id in device.config_entries:
-            entry = self.hass.config_entries.async_get_entry(entry_id)
-            if entry is None or entry.domain != "mobile_app":
-                continue
-            device_name = entry.data.get("device_name")
-            if not device_name:
-                continue
-            service = slugify(f"mobile_app_{device_name}")
-            if self.hass.services.has_service("notify", service):
-                return service
-        return None

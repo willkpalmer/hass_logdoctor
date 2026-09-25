@@ -59,7 +59,10 @@ report, never a change.
 6. **Separately from the daily scan, it watches every automation run in
    real time** and posts a persistent notification the moment one fails -
    see [Automation failure alerts](#automation-failure-alerts) below.
-7. **If you've configured an OpenAI API key**, the scan's report then
+7. **After every restart, it checks for scheduled automations that were
+   missed while Home Assistant was offline** - see
+   [Missed schedule alerts](#missed-schedule-alerts) below.
+8. **If you've configured an OpenAI API key**, the scan's report then
    automatically goes through the
    [investigation stage](#investigation-stage): every anomaly gets
    researched by an OpenAI model, and a **second, separate persistent
@@ -116,9 +119,11 @@ not something wrong with this repository; a fix is up as
      [Supervisor-managed logs](#supervisor-managed-logs) below).
    - **Notify me when any automation fails** — on by default; see
      [Automation failure alerts](#automation-failure-alerts) below.
-   - **Also push automation failures to this phone** — optional; pick a
-     device from the Mobile App integration to also get a push
-     notification for each automation failure.
+   - **After a restart, tell me about missed schedules** — on by default;
+     see [Missed schedule alerts](#missed-schedule-alerts) below.
+   - **Also push automation failures and missed schedules to this phone** —
+     optional; pick a device from the Mobile App integration to also get a
+     push notification for each automation failure and missed schedule.
    - **OpenAI API key** — optional; set this to turn on the automatic
      [investigation stage](#investigation-stage) after every scan. Leave
      it blank to skip investigation entirely (the companion app remains
@@ -175,6 +180,47 @@ reading the log file. That also means:
   step's error.
 - If you've raised the log level of `homeassistant.components.automation`
   above `ERROR` in your `logger:` configuration, failures won't be seen.
+
+## Missed schedule alerts
+
+Home Assistant never catches up on a time trigger that passed while it was
+offline: if an automation is set for 03:00 and Home Assistant is restarting,
+updating, crashed, or without power from 02:55 to 03:10, that run is
+silently skipped. With **After a restart, tell me about missed schedules**
+on (the default), Log Doctor works out which runs were skipped and posts a
+persistent notification ("Automations missed while Home Assistant was
+offline") listing each automation, linked to its editor, and the times it
+should have run. If a phone is chosen for pushes, it gets a short summary
+too.
+
+How it works:
+
+- While running, Log Doctor saves a heartbeat timestamp every **30
+  seconds** (a tiny file under `.storage/`), plus once more on a clean
+  shutdown. After a restart, the last heartbeat and the moment Home
+  Assistant finished starting (when automations re-attach their triggers)
+  give the offline window - exact for a clean restart, and to within 30
+  seconds for a crash or power cut.
+- Each enabled automation's triggers are checked against that window:
+  - **Time triggers** - fixed times (`at: "03:00"`), several times, and
+    times taken from an `input_datetime` helper (time-only or date+time) or
+    a timestamp `sensor`, including offsets and weekday limits.
+  - **Sun triggers** - sunrise/sunset, including offsets.
+- Any time at or before the automation's `last_triggered` is dropped: it
+  actually ran (e.g. just before the shutdown).
+
+Limits:
+
+- It only reports; missed automations are never re-run.
+- Conditions can't be checked after the fact, so "missed" means "was
+  scheduled but never attempted" - some might not have done anything.
+- Other trigger types - time patterns (every N minutes), calendar events,
+  state changes, and so on - aren't checked.
+- Times from a helper or sensor use its current value, which is normally
+  what it was during the outage.
+- Nothing is checked after the first restart following installation (there
+  was no heartbeat yet), or when only the integration is reloaded (Home
+  Assistant itself never went down).
 
 ## Supervisor-managed logs
 

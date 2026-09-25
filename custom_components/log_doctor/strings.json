@@ -13,7 +13,8 @@
           "report_retention_days": "Days to keep old report files on disk",
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
           "monitor_automations": "Notify me when any automation fails (persistent notification per failing automation)",
-          "automation_failure_notify_device": "Also push automation failures to this phone (Mobile App device, optional)",
+          "monitor_missed_schedules": "After a restart, tell me about time-scheduled automations that were missed while Home Assistant was offline",
+          "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
           "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
         }
@@ -36,7 +37,8 @@
           "report_retention_days": "Days to keep old report files on disk",
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
           "monitor_automations": "Notify me when any automation fails (persistent notification per failing automation)",
-          "automation_failure_notify_device": "Also push automation failures to this phone (Mobile App device, optional)",
+          "monitor_missed_schedules": "After a restart, tell me about time-scheduled automations that were missed while Home Assistant was offline",
+          "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
           "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
         }

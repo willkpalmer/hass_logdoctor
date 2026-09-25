@@ -31,6 +31,7 @@ from .const import (
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
+    CONF_MONITOR_MISSED_SCHEDULES,
     CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
@@ -39,6 +40,7 @@ from .const import (
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_MONITOR_AUTOMATIONS,
+    DEFAULT_MONITOR_MISSED_SCHEDULES,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
@@ -93,6 +95,12 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 CONF_MONITOR_AUTOMATIONS,
                 default=defaults.get(
                     CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS
+                ),
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_MONITOR_MISSED_SCHEDULES,
+                default=defaults.get(
+                    CONF_MONITOR_MISSED_SCHEDULES, DEFAULT_MONITOR_MISSED_SCHEDULES
                 ),
             ): BooleanSelector(),
             # Optional and clearable, so use a suggested value rather than a

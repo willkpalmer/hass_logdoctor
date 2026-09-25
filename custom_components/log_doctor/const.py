@@ -29,6 +29,8 @@ CONF_MAX_INVESTIGATED = "max_investigated"
 CONF_MONITOR_AUTOMATIONS = "monitor_automations"
 DEFAULT_MONITOR_AUTOMATIONS = True
 CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE = "automation_failure_notify_device"
+CONF_MONITOR_MISSED_SCHEDULES = "monitor_missed_schedules"
+DEFAULT_MONITOR_MISSED_SCHEDULES = True
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -48,6 +50,7 @@ NOTIFICATION_ID = "log_doctor_daily_report"
 NOTIFICATION_ID_INVESTIGATION = "log_doctor_investigation_report"
 # One notification per failing automation, suffixed with its object_id.
 NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX = "log_doctor_automation_failure_"
+NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
 
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"

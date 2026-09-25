@@ -5,10 +5,12 @@ against a built-in knowledge base, and reports what it finds once a day. It
 never modifies your configuration or takes any remediation action - it only
 reports. Separately, it watches every automation run in real time and
 posts a persistent notification whenever one fails (see
-automation_monitor.py). When an OpenAI API key is configured and the
-"Auto-investigate" switch is on (see switch.py), it also automatically investigates the
-anomalies found with an OpenAI model right after each scan (see
-investigation.py). The separate companion app (see companion/) offers the
+automation_monitor.py), and after each restart reports any time-scheduled
+automation runs missed while Home Assistant was offline (see
+missed_schedules.py). When an OpenAI API key is configured and the
+"Auto-investigate" switch is on (see switch.py), it also automatically
+investigates the anomalies found with an OpenAI model right after each scan
+(see investigation.py). The separate companion app (see companion/) offers the
 same research on demand, against any report file, independent of this
 automatic stage.
 """
@@ -29,6 +31,7 @@ from .const import (
     CONF_MIN_SEVERITY,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
+    CONF_MONITOR_MISSED_SCHEDULES,
     CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
@@ -37,6 +40,7 @@ from .const import (
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
     DEFAULT_MONITOR_AUTOMATIONS,
+    DEFAULT_MONITOR_MISSED_SCHEDULES,
     DEFAULT_REPORT_RETENTION_DAYS,
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
@@ -49,6 +53,7 @@ from .const import (
 from .automation_monitor import AutomationFailureMonitor
 from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
+from .missed_schedules import MissedScheduleWatch
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -115,12 +120,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.async_on_unload(unsub_time)
 
+    notify_device_id = options.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE) or None
     if options.get(CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS):
-        monitor = AutomationFailureMonitor(
-            hass,
-            notify_device_id=options.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE) or None,
-        )
+        monitor = AutomationFailureMonitor(hass, notify_device_id=notify_device_id)
         entry.async_on_unload(monitor.async_start())
+
+    if options.get(CONF_MONITOR_MISSED_SCHEDULES, DEFAULT_MONITOR_MISSED_SCHEDULES):
+        watch = MissedScheduleWatch(
+            hass, entry.entry_id, notify_device_id=notify_device_id
+        )
+        await watch.async_start()
+        entry.async_on_unload(watch.async_stop)
 
     async def _async_scan_now(_call: ServiceCall) -> None:
         await coordinator.async_request_refresh()
