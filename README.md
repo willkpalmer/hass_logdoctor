@@ -354,13 +354,20 @@ not with log size.
 HACS tracks updates for this integration via GitHub Releases, not just
 commits to `main` — it compares the latest release tag against the
 `version` in the installed `manifest.json` to decide whether to show an
-update. Each time a change should be installable as an update:
+update. Releases are created automatically by the
+[Release workflow](.github/workflows/release.yml): on every push to
+`main`, it reads `"version"` from `manifest.json` and, if there's no
+matching `v<version>` release yet, creates one (with auto-generated notes).
+So each time a change should be installable as an update:
 
 1. Bump `"version"` in `custom_components/log_doctor/manifest.json`
    (semantic versioning, e.g. `0.2.0` → `0.3.0`).
 2. Push to `main`.
-3. Cut a release: `gh release create v0.3.0 --title "v0.3.0" --notes "..."`
-   (tag must match the manifest version, with a `v` prefix).
+
+Pushes that don't change the version are a no-op for the workflow. It can
+also be run by hand from the repository's **Actions** tab. If it fails
+with a permissions error, allow "Read and write permissions" under
+**Settings → Actions → General → Workflow permissions**.
 
 Without a release, HACS still sees the repository but has nothing to
 compare against, so it won't surface a clean "update available".

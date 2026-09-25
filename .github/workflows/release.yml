@@ -1,0 +1,44 @@
+# Creates a GitHub Release whenever main carries a manifest version that
+# hasn't been released yet. HACS offers updates based on releases, so
+# bumping "version" in manifest.json and pushing to main is all a release
+# takes. Also runnable by hand from the Actions tab (workflow_dispatch).
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read manifest version
+        id: version
+        run: |
+          version=$(jq -r .version custom_components/log_doctor/manifest.json)
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::No version found in manifest.json"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create release if it doesn't exist yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - nothing to do."
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
