@@ -206,6 +206,13 @@ How it works:
     times taken from an `input_datetime` helper (time-only or date+time) or
     a timestamp `sensor`, including offsets and weekday limits.
   - **Sun triggers** - sunrise/sunset, including offsets.
+  - **Time pattern triggers** - `hours`/`minutes`/`seconds` patterns such
+    as `minutes: "/15"` or `hours: 3`, matched exactly the way Home
+    Assistant does. Note that a frequent pattern (every minute, say) will
+    be reported after almost every restart, since a restart usually takes
+    longer than that. For very frequent patterns over a long outage, up to
+    10,000 missed times per trigger are counted and the rest shown as
+    "N+ more".
 - Any time at or before the automation's `last_triggered` is dropped: it
   actually ran (e.g. just before the shutdown).
 
@@ -214,8 +221,8 @@ Limits:
 - It only reports; missed automations are never re-run.
 - Conditions can't be checked after the fact, so "missed" means "was
   scheduled but never attempted" - some might not have done anything.
-- Other trigger types - time patterns (every N minutes), calendar events,
-  state changes, and so on - aren't checked.
+- Other trigger types - calendar events, state changes, and so on -
+  aren't checked.
 - Times from a helper or sensor use its current value, which is normally
   what it was during the outage.
 - Nothing is checked after the first restart following installation (there

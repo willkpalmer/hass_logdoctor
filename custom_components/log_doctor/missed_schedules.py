@@ -9,8 +9,9 @@ skipped, silently. This works out what was skipped:
    and the moment Home Assistant finished starting (when automations attach
    their triggers again) bound the outage window, to within
    HEARTBEAT_INTERVAL for an unclean stop.
-2. Every enabled automation's time and sun triggers are expanded into the
-   points in time they would have fired within that window.
+2. Every enabled automation's time, time pattern and sun triggers are
+   expanded into the points in time they would have fired within that
+   window.
 3. Any of those at or before the automation's last_triggered time did run
    (e.g. just before the shutdown) and are dropped.
 
@@ -46,6 +47,11 @@ _HEARTBEAT_STORAGE_VERSION = 1
 # runs of a daily automation.
 _MAX_TIMES_PER_AUTOMATION = 5
 
+# Cap on missed points collected per trigger. A time pattern firing every
+# second over a multi-day outage would otherwise mean hundreds of thousands;
+# past this the notification just says "N+ more".
+_MAX_POINTS_PER_TRIGGER = 10_000
+
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -55,6 +61,9 @@ class MissedAutomation:
     name: str
     config_id: str | None
     times: list[datetime] = field(default_factory=list)
+    # True if more times were missed than were collected (see
+    # _MAX_POINTS_PER_TRIGGER).
+    truncated: bool = False
 
 
 class MissedScheduleWatch:
@@ -163,8 +172,9 @@ class MissedScheduleWatch:
         for item in missed:
             shown = ", ".join(_format_time(t, window_start, window_end) for t in item.times[:_MAX_TIMES_PER_AUTOMATION])
             hidden = len(item.times) - _MAX_TIMES_PER_AUTOMATION
-            if hidden > 0:
-                shown += f" and {hidden} more"
+            if hidden > 0 or item.truncated:
+                plus = "+" if item.truncated else ""
+                shown += f" and {max(hidden, 0):,}{plus} more"
             label = f"**{item.name}**"
             if item.config_id:
                 label = f"[{item.name}](/config/automation/edit/{item.config_id})"
@@ -245,14 +255,20 @@ def find_missed_runs(
                 last_triggered = dt_util.parse_datetime(last_triggered)
 
         times: set[datetime] = set()
+        truncated = False
         for trigger in triggers:
             if trigger.get("enabled", True) is False:
                 continue
+            collected = 0
             for point in _trigger_points(hass, trigger, window_start, window_end):
                 if window_start < point < window_end and (
                     last_triggered is None or point > last_triggered
                 ):
+                    if collected >= _MAX_POINTS_PER_TRIGGER:
+                        truncated = True
+                        break
                     times.add(point)
+                    collected += 1
 
         if times:
             missed.append(
@@ -261,6 +277,7 @@ def find_missed_runs(
                     name=(state and state.name) or entity.entity_id,
                     config_id=(state.attributes.get("id") if state else None),
                     times=sorted(times),
+                    truncated=truncated,
                 )
             )
     missed.sort(key=lambda m: m.times[0])
@@ -282,8 +299,60 @@ def _trigger_points(
                 yield point
     elif platform == "sun":
         yield from _sun_points(hass, trigger, start, end)
-    # Other trigger types (state, time_pattern, calendar, ...) aren't
-    # schedules that can be expanded reliably, so they're not checked.
+    elif platform == "time_pattern":
+        yield from _time_pattern_points(hass, trigger, start, end)
+    # Other trigger types (state, calendar, ...) aren't schedules that can
+    # be expanded reliably, so they're not checked.
+
+
+def _time_pattern_points(
+    hass: HomeAssistant, trigger: dict[str, Any], start: datetime, end: datetime
+) -> Iterator[datetime]:
+    """Yield, in order, the local times in (start, end) a time pattern matches.
+
+    Mirrors the time_pattern trigger: a unit that isn't given matches every
+    value, except that when a larger unit is given the smaller ones default
+    to 0 (so "hours: /2" fires on the hour, not every second of it). Hours
+    and minutes wholly outside the window are skipped without visiting
+    their seconds, so the cost is roughly the number of points yielded.
+    """
+    hours = trigger.get("hours")
+    minutes = trigger.get("minutes")
+    seconds = trigger.get("seconds")
+    if minutes is None and hours is not None:
+        minutes = 0
+    if seconds is None and minutes is not None:
+        seconds = 0
+    try:
+        hour_values = dt_util.parse_time_expression(hours, 0, 23)
+        minute_values = dt_util.parse_time_expression(minutes, 0, 59)
+        second_values = dt_util.parse_time_expression(seconds, 0, 59)
+    except (ValueError, TypeError):
+        return
+
+    tz = _time_zone(hass)
+    day = dt_util.as_local(start).date()
+    last_day = dt_util.as_local(end).date()
+    while day <= last_day:
+        for hour in hour_values:
+            hour_start = datetime(day.year, day.month, day.day, hour, tzinfo=tz)
+            if hour_start >= end:
+                return
+            if hour_start + timedelta(hours=1) <= start:
+                continue
+            for minute in minute_values:
+                minute_start = hour_start.replace(minute=minute)
+                if minute_start >= end:
+                    return
+                if minute_start + timedelta(minutes=1) <= start:
+                    continue
+                for second in second_values:
+                    point = minute_start.replace(second=second)
+                    if point >= end:
+                        return
+                    if point > start:
+                        yield point
+        day += timedelta(days=1)
 
 
 def _time_at_points(
