@@ -9,6 +9,8 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    DeviceSelector,
+    DeviceSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -21,6 +23,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
@@ -92,6 +95,14 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                     CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS
                 ),
             ): BooleanSelector(),
+            # Optional and clearable, so use a suggested value rather than a
+            # default (a default would be re-applied when cleared).
+            vol.Optional(
+                CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
+                description={
+                    "suggested_value": defaults.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE)
+                },
+            ): DeviceSelector(DeviceSelectorConfig(integration="mobile_app")),
             vol.Optional(
                 CONF_OPENAI_API_KEY, default=defaults.get(CONF_OPENAI_API_KEY, "")
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
@@ -142,6 +153,10 @@ class LogDoctorOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> Any:
         if user_input is not None:
+            # A cleared optional field is left out of user_input entirely;
+            # store it as explicitly empty so the value chosen during the
+            # initial setup (in entry.data) doesn't come back.
+            user_input.setdefault(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE, None)
             return self.async_create_entry(title="", data=user_input)
 
         current = {**self._config_entry.data, **self._config_entry.options}

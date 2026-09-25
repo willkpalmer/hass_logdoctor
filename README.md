@@ -116,6 +116,9 @@ not something wrong with this repository; a fix is up as
      [Supervisor-managed logs](#supervisor-managed-logs) below).
    - **Notify me when any automation fails** — on by default; see
      [Automation failure alerts](#automation-failure-alerts) below.
+   - **Also push automation failures to this phone** — optional; pick a
+     device from the Mobile App integration to also get a push
+     notification for each automation failure.
    - **OpenAI API key** — optional; set this to turn on the automatic
      [investigation stage](#investigation-stage) after every scan. Leave
      it blank to skip investigation entirely (the companion app remains
@@ -144,6 +147,16 @@ template that couldn't be rendered, invalid service data, and so on.
 - Each notification lists the error(s) from that run and links straight to
   the automation's trace, when the automation has an `id` (every automation
   created in the UI does).
+- **Optionally, a push notification to your phone too.** Choose a device
+  under **Also push automation failures to this phone** (the list shows
+  every phone/tablet registered with the Home Assistant Companion app, via
+  the Mobile App integration). Each push carries the automation's name and
+  its first error; tapping it opens the automation's trace. Repeat
+  failures of the same automation replace the earlier push rather than
+  stacking up. This is separate from the **Mobile notify service** setting,
+  which only receives the daily scan summary. If the chosen device is later
+  removed or can't receive notifications, the persistent notification is
+  still posted and a warning is logged.
 - Like everything else here it's report-only: the automation itself is
   never touched.
 

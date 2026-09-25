@@ -28,6 +28,7 @@ CONF_OPENAI_API_KEY = "openai_api_key"
 CONF_MAX_INVESTIGATED = "max_investigated"
 CONF_MONITOR_AUTOMATIONS = "monitor_automations"
 DEFAULT_MONITOR_AUTOMATIONS = True
+CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE = "automation_failure_notify_device"
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't

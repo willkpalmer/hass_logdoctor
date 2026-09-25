@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
+    CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
@@ -115,7 +116,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(unsub_time)
 
     if options.get(CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS):
-        entry.async_on_unload(AutomationFailureMonitor(hass).async_start())
+        monitor = AutomationFailureMonitor(
+            hass,
+            notify_device_id=options.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE) or None,
+        )
+        entry.async_on_unload(monitor.async_start())
 
     async def _async_scan_now(_call: ServiceCall) -> None:
         await coordinator.async_request_refresh()

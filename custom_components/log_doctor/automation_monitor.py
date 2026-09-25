@@ -1,8 +1,9 @@
 """Real-time automation failure monitor.
 
 Unlike the daily scan, this watches every automation run as it happens and
-posts a persistent notification the moment one fails. It never touches the
-automation itself - it only reports, like the rest of Log Doctor.
+posts a persistent notification the moment one fails - and, if a Mobile App
+device is chosen, a push notification to that phone too. It never touches
+the automation itself - it only reports, like the rest of Log Doctor.
 
 Home Assistant doesn't fire an event when an automation run fails, but
 every automation logs its failures through its own child logger,
@@ -24,6 +25,8 @@ from datetime import datetime
 from typing import Callable
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import slugify
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
 
@@ -78,8 +81,11 @@ class _AutomationErrorHandler(logging.Handler):
 class AutomationFailureMonitor:
     """Posts a persistent notification whenever an automation run fails."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, notify_device_id: str | None = None) -> None:
         self.hass = hass
+        # A device from the Mobile App integration to also push each
+        # failure to, if one was chosen in the options.
+        self.notify_device_id = notify_device_id
         self._handler = _AutomationErrorHandler(self)
         self._pending: dict[str, _PendingFailure] = {}
         # Failures per automation since this monitor started (i.e. since the
@@ -151,12 +157,13 @@ class AutomationFailureMonitor:
         if config_id:
             lines.append(f"[Open the automation's trace](/config/automation/trace/{config_id})")
 
+        notification_id = f"{NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX}{object_id}"
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
-                    "notification_id": f"{NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX}{object_id}",
+                    "notification_id": notification_id,
                     "title": f"Automation failed: {name}",
                     "message": "\n".join(lines).rstrip(),
                 },
@@ -166,3 +173,73 @@ class AutomationFailureMonitor:
             # Deliberately logged under log_doctor's own logger, never the
             # automation one, so this can't feed back into the handler.
             _LOGGER.exception("Failed to post automation failure notification for %s", entity_id)
+
+        if self.notify_device_id:
+            await self._async_push(name, pending, count, config_id, notification_id)
+
+    async def _async_push(
+        self,
+        name: str,
+        pending: _PendingFailure,
+        count: int,
+        config_id: str | None,
+        tag: str,
+    ) -> None:
+        """Send a short push notification to the chosen Mobile App device."""
+        service = self._mobile_app_notify_service()
+        if service is None:
+            _LOGGER.warning(
+                "Can't send automation failure push: the chosen Mobile App "
+                "device (%s) no longer has a notify service - it may have "
+                "been removed, or its app isn't set up for notifications",
+                self.notify_device_id,
+            )
+            return
+
+        # Phones show plain text, not Markdown, and truncate long bodies, so
+        # only the first error is sent; the persistent notification has all.
+        message = pending.errors[0].removeprefix(f"{name}: ")
+        if count > 1:
+            message += f" (failed {count} times since Home Assistant started)"
+        data: dict[str, str] = {
+            # Same tag per automation, so a repeat failure replaces the
+            # previous push instead of stacking up, like the persistent one.
+            "tag": tag,
+        }
+        if config_id:
+            trace_url = f"/config/automation/trace/{config_id}"
+            data["url"] = trace_url  # iOS: open on tap
+            data["clickAction"] = trace_url  # Android: open on tap
+
+        try:
+            await self.hass.services.async_call(
+                "notify",
+                service,
+                {"title": f"Automation failed: {name}", "message": message, "data": data},
+                blocking=True,
+            )
+        except Exception:  # noqa: BLE001 - never let a notification failure escalate
+            _LOGGER.exception("Failed to send automation failure push via notify.%s", service)
+
+    def _mobile_app_notify_service(self) -> str | None:
+        """Resolve the chosen device to its notify.mobile_app_* service name.
+
+        The Mobile App integration names each phone's notify service after
+        the device name the app registered with (not any name the device
+        was later renamed to in the UI), i.e. "mobile_app_<slug of that
+        name>" - the same name shown in Developer Tools > Actions.
+        """
+        device = dr.async_get(self.hass).async_get(self.notify_device_id)
+        if device is None:
+            return None
+        for entry_id in device.config_entries:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None or entry.domain != "mobile_app":
+                continue
+            device_name = entry.data.get("device_name")
+            if not device_name:
+                continue
+            service = slugify(f"mobile_app_{device_name}")
+            if self.hass.services.has_service("notify", service):
+                return service
+        return None
