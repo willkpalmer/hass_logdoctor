@@ -29,6 +29,7 @@ from .const import (
     CONF_LOOKBACK_HOURS,
     CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
+    CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -39,6 +40,7 @@ from .const import (
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
+    DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     DEFAULT_MONITOR_AUTOMATIONS,
     DEFAULT_MONITOR_MISSED_SCHEDULES,
     DEFAULT_REPORT_RETENTION_DAYS,
@@ -103,6 +105,21 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                     CONF_MONITOR_MISSED_SCHEDULES, DEFAULT_MONITOR_MISSED_SCHEDULES
                 ),
             ): BooleanSelector(),
+            vol.Required(
+                CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+                default=defaults.get(
+                    CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+                    DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+                ),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0,
+                    max=1440,
+                    step=1,
+                    mode=NumberSelectorMode.BOX,
+                    unit_of_measurement="min",
+                )
+            ),
             # Optional and clearable, so use a suggested value rather than a
             # default (a default would be re-applied when cleared).
             vol.Optional(

@@ -17,6 +17,7 @@ automatic stage.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -29,6 +30,7 @@ from .const import (
     CONF_LOOKBACK_HOURS,
     CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
+    CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -39,6 +41,7 @@ from .const import (
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_MIN_SEVERITY,
+    DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     DEFAULT_MONITOR_AUTOMATIONS,
     DEFAULT_MONITOR_MISSED_SCHEDULES,
     DEFAULT_REPORT_RETENTION_DAYS,
@@ -127,7 +130,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if options.get(CONF_MONITOR_MISSED_SCHEDULES, DEFAULT_MONITOR_MISSED_SCHEDULES):
         watch = MissedScheduleWatch(
-            hass, entry.entry_id, notify_device_id=notify_device_id
+            hass,
+            entry.entry_id,
+            notify_device_id=notify_device_id,
+            min_pattern_interval=timedelta(
+                minutes=int(
+                    options.get(
+                        CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+                        DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+                    )
+                )
+            ),
         )
         await watch.async_start()
         entry.async_on_unload(watch.async_stop)

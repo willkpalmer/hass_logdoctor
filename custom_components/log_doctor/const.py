@@ -31,6 +31,13 @@ DEFAULT_MONITOR_AUTOMATIONS = True
 CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE = "automation_failure_notify_device"
 CONF_MONITOR_MISSED_SCHEDULES = "monitor_missed_schedules"
 DEFAULT_MONITOR_MISSED_SCHEDULES = True
+# Time pattern triggers repeating more often than this many minutes are left
+# out of the missed schedule check (0 = check them all). 15 minutes skips
+# the frequent polling-style patterns (every few minutes) that a restart of a
+# couple of minutes would otherwise flag almost every time, while still
+# covering quarter-hourly, hourly and less frequent schedules.
+CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES = "missed_schedule_min_pattern_minutes"
+DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES = 15
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't

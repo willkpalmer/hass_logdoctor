@@ -14,6 +14,7 @@
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
           "monitor_automations": "Notify me when any automation fails (persistent notification per failing automation)",
           "monitor_missed_schedules": "After a restart, tell me about time-scheduled automations that were missed while Home Assistant was offline",
+          "missed_schedule_min_pattern_minutes": "Skip time pattern triggers that repeat more often than every … minutes (0 = check all)",
           "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
           "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
@@ -38,6 +39,7 @@
           "include_supervisor_logs": "Also check Supervisor, Host, and add-on logs (Home Assistant OS/Supervised only)",
           "monitor_automations": "Notify me when any automation fails (persistent notification per failing automation)",
           "monitor_missed_schedules": "After a restart, tell me about time-scheduled automations that were missed while Home Assistant was offline",
+          "missed_schedule_min_pattern_minutes": "Skip time pattern triggers that repeat more often than every … minutes (0 = check all)",
           "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
           "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"

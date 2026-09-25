@@ -121,6 +121,9 @@ not something wrong with this repository; a fix is up as
      [Automation failure alerts](#automation-failure-alerts) below.
    - **After a restart, tell me about missed schedules** — on by default;
      see [Missed schedule alerts](#missed-schedule-alerts) below.
+   - **Skip time pattern triggers that repeat more often than every …
+     minutes** — default 15; 0 checks every pattern. See
+     [Missed schedule alerts](#missed-schedule-alerts).
    - **Also push automation failures and missed schedules to this phone** —
      optional; pick a device from the Mobile App integration to also get a
      push notification for each automation failure and missed schedule.
@@ -208,11 +211,16 @@ How it works:
   - **Sun triggers** - sunrise/sunset, including offsets.
   - **Time pattern triggers** - `hours`/`minutes`/`seconds` patterns such
     as `minutes: "/15"` or `hours: 3`, matched exactly the way Home
-    Assistant does. Note that a frequent pattern (every minute, say) will
-    be reported after almost every restart, since a restart usually takes
-    longer than that. For very frequent patterns over a long outage, up to
-    10,000 missed times per trigger are counted and the rest shown as
-    "N+ more".
+    Assistant does. Patterns that repeat more often than the **Skip time
+    pattern triggers that repeat more often than every … minutes** setting
+    (default **15**) are left out: a restart usually takes a few minutes,
+    so a pattern firing every minute or five would be reported after
+    almost every restart. Quarter-hourly, hourly and less frequent patterns
+    are still checked. The gap is measured between consecutive matches,
+    including from the last match of one day to the first of the next, so
+    e.g. `minutes: "/50"` (at :00 and :50) counts as every 10 minutes. Set
+    it to 0 to check every pattern. Up to 10,000 missed times per trigger
+    are counted; any more are shown as "N+ more".
 - Any time at or before the automation's `last_triggered` is dropped: it
   actually ran (e.g. just before the shutdown).
 

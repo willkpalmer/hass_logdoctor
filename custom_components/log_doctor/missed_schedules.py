@@ -74,9 +74,11 @@ class MissedScheduleWatch:
         hass: HomeAssistant,
         entry_id: str,
         notify_device_id: str | None = None,
+        min_pattern_interval: timedelta = timedelta(0),
     ) -> None:
         self.hass = hass
         self.notify_device_id = notify_device_id
+        self.min_pattern_interval = min_pattern_interval
         self._store: Store[dict[str, Any]] = Store(
             hass, _HEARTBEAT_STORAGE_VERSION, f"{DOMAIN}.{entry_id}.heartbeat"
         )
@@ -146,7 +148,9 @@ class MissedScheduleWatch:
 
     async def _async_check(self, window_start: datetime, window_end: datetime) -> None:
         try:
-            missed = find_missed_runs(self.hass, window_start, window_end)
+            missed = find_missed_runs(
+                self.hass, window_start, window_end, self.min_pattern_interval
+            )
         except Exception:  # noqa: BLE001 - never let the check break startup
             _LOGGER.exception("Log Doctor couldn't check for missed scheduled automations")
             return
@@ -227,10 +231,15 @@ class MissedScheduleWatch:
 
 @callback
 def find_missed_runs(
-    hass: HomeAssistant, window_start: datetime, window_end: datetime
+    hass: HomeAssistant,
+    window_start: datetime,
+    window_end: datetime,
+    min_pattern_interval: timedelta = timedelta(0),
 ) -> list[MissedAutomation]:
-    """Return every enabled automation with time/sun trigger points that fell
-    inside (window_start, window_end) and after its last_triggered time.
+    """Return every enabled automation with time/sun/time pattern trigger
+    points that fell inside (window_start, window_end) and after its
+    last_triggered time. Time patterns that repeat more often than
+    min_pattern_interval are ignored (0 = check every pattern).
     """
     component = hass.data.get("automation")
     if component is None:
@@ -260,7 +269,9 @@ def find_missed_runs(
             if trigger.get("enabled", True) is False:
                 continue
             collected = 0
-            for point in _trigger_points(hass, trigger, window_start, window_end):
+            for point in _trigger_points(
+                hass, trigger, window_start, window_end, min_pattern_interval
+            ):
                 if window_start < point < window_end and (
                     last_triggered is None or point > last_triggered
                 ):
@@ -285,7 +296,11 @@ def find_missed_runs(
 
 
 def _trigger_points(
-    hass: HomeAssistant, trigger: dict[str, Any], start: datetime, end: datetime
+    hass: HomeAssistant,
+    trigger: dict[str, Any],
+    start: datetime,
+    end: datetime,
+    min_pattern_interval: timedelta = timedelta(0),
 ) -> Iterator[datetime]:
     platform = trigger.get("platform") or trigger.get("trigger")
     if platform == "time":
@@ -300,21 +315,25 @@ def _trigger_points(
     elif platform == "sun":
         yield from _sun_points(hass, trigger, start, end)
     elif platform == "time_pattern":
-        yield from _time_pattern_points(hass, trigger, start, end)
+        values = _time_pattern_values(trigger)
+        if values is None:
+            return
+        if _repeats_more_often_than(values, min_pattern_interval):
+            return
+        yield from _time_pattern_points(hass, values, start, end)
     # Other trigger types (state, calendar, ...) aren't schedules that can
     # be expanded reliably, so they're not checked.
 
 
-def _time_pattern_points(
-    hass: HomeAssistant, trigger: dict[str, Any], start: datetime, end: datetime
-) -> Iterator[datetime]:
-    """Yield, in order, the local times in (start, end) a time pattern matches.
+_PatternValues = tuple[list[int], list[int], list[int]]
+
+
+def _time_pattern_values(trigger: dict[str, Any]) -> _PatternValues | None:
+    """The hours, minutes and seconds a time pattern trigger matches.
 
     Mirrors the time_pattern trigger: a unit that isn't given matches every
     value, except that when a larger unit is given the smaller ones default
-    to 0 (so "hours: /2" fires on the hour, not every second of it). Hours
-    and minutes wholly outside the window are skipped without visiting
-    their seconds, so the cost is roughly the number of points yielded.
+    to 0 (so "hours: /2" fires on the hour, not every second of it).
     """
     hours = trigger.get("hours")
     minutes = trigger.get("minutes")
@@ -324,12 +343,49 @@ def _time_pattern_points(
     if seconds is None and minutes is not None:
         seconds = 0
     try:
-        hour_values = dt_util.parse_time_expression(hours, 0, 23)
-        minute_values = dt_util.parse_time_expression(minutes, 0, 59)
-        second_values = dt_util.parse_time_expression(seconds, 0, 59)
+        return (
+            dt_util.parse_time_expression(hours, 0, 23),
+            dt_util.parse_time_expression(minutes, 0, 59),
+            dt_util.parse_time_expression(seconds, 0, 59),
+        )
     except (ValueError, TypeError):
-        return
+        return None
 
+
+def _repeats_more_often_than(values: _PatternValues, interval: timedelta) -> bool:
+    """Whether any two consecutive matches of the pattern (including the
+    wrap from the last match of one day to the first of the next) are
+    closer together than interval. Stops at the first such pair, so even
+    an every-second pattern is decided after two matches.
+    """
+    threshold = interval.total_seconds()
+    if threshold <= 0:
+        return False
+    hour_values, minute_values, second_values = values
+    first = previous = None
+    for hour in hour_values:
+        for minute in minute_values:
+            for second in second_values:
+                current = hour * 3600 + minute * 60 + second
+                if previous is not None and current - previous < threshold:
+                    return True
+                if first is None:
+                    first = current
+                previous = current
+    if first is None:
+        return False
+    return first + 86400 - previous < threshold
+
+
+def _time_pattern_points(
+    hass: HomeAssistant, values: _PatternValues, start: datetime, end: datetime
+) -> Iterator[datetime]:
+    """Yield, in order, the local times in (start, end) a time pattern matches.
+
+    Hours and minutes wholly outside the window are skipped without visiting
+    their seconds, so the cost is roughly the number of points yielded.
+    """
+    hour_values, minute_values, second_values = values
     tz = _time_zone(hass)
     day = dt_util.as_local(start).date()
     last_day = dt_util.as_local(end).date()
