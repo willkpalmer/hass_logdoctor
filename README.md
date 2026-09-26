@@ -139,8 +139,9 @@ not something wrong with this repository; a fix is up as
      calls, so one very noisy scan can't run away with your API bill. Only
      used when an OpenAI API key is set.
 
-All of these can be changed later from the integration's **Configure**
-button.
+All of these can be changed later from the **Settings** view of the
+[Log Doctor panel](#settings) in the sidebar, or from the integration's
+**Configure** button.
 
 ## Automation failure alerts
 
@@ -294,6 +295,35 @@ Failed runs and runs missed while Home Assistant was offline. Columns:
 **Date**, **Time** (sorts by time of day, so everything that fails around
 03:00 sorts together), **Automation** (links to its traces) and
 **Reason**; filter to only failed or only missed runs.
+
+### Settings
+
+Every setting from the integration's **Configure** dialog, plus what its
+entities do, on one page (`/log-doctor#settings`):
+
+- **Daily scan** - scan time, minimum severity, first-scan lookback, log
+  file path, Supervisor/Host/add-on logs, and how long reports and list
+  entries are kept.
+- **Automation monitoring** - failure alerts, missed-schedule alerts, and
+  which time patterns to skip.
+- **Notifications** - the phone to push automation failures and missed
+  schedules to (picked from your Companion app devices), and the notify
+  service for the daily scan summary (with suggestions).
+- **Investigation (OpenAI)** - the API key, the per-scan cap, and the
+  **Auto-investigate** switch. The key is never shown or sent to the
+  browser: the page only says whether one is set. Type a new one to replace
+  it, or tick **Remove key**.
+- **Scan and history** - when the last scan ran and what it found, where
+  the files are, **Scan now** (the button entity), and **Clear history**
+  (the `log_doctor.clear_history` service; asks you to click twice).
+
+Changed fields are marked with a dot until you **Save** (or **Discard
+changes**). Saving is checked against the same limits as the Configure
+dialog - an out-of-range value is refused with a message and nothing is
+saved - and, like saving that dialog, restarts WP Log Doctor for a moment.
+The Auto-investigate switch, Scan now and Clear history take effect
+straight away. The entities and the Configure dialog still work and stay in
+step with this page.
 
 ## Automation failure log
 

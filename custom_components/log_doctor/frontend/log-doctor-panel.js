@@ -1,10 +1,13 @@
 // WP Log Doctor - sidebar panel.
 //
 // A self-contained web component (no build step, no external libraries)
-// with two views, each a reviewable list with Open and Archived tabs:
+// with three views. Two are reviewable lists with Open and Archived tabs:
 //
 //   #logs      Log review - the anomalies the daily scans reported
 //   #failures  Automation failures - failed and missed automation runs
+//
+// and #settings holds all of WP Log Doctor's settings (see
+// LogDoctorSettings at the end of this file).
 //
 // Each list is subscribed to over the WebSocket (log_doctor/review/*) and
 // comes back in full after every change, so new entries appear live.
@@ -170,8 +173,10 @@ const TEMPLATE = `
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
+    <button class="view" data-view="settings">Settings</button>
   </div>
-  <div class="card">
+  <log-doctor-settings data-el="settings" hidden></log-doctor-settings>
+  <div class="card" data-el="list-card">
     <div class="tabs">
       <button class="tab" data-tab="open">Open</button>
       <button class="tab" data-tab="archived">Archived</button>
@@ -306,6 +311,7 @@ class LogDoctorPanel extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    this._el("settings").hass = hass;
     if (first) this._formatters();
     if (this.isConnected) this._subscribeAll();
   }
@@ -342,7 +348,8 @@ class LogDoctorPanel extends HTMLElement {
   _applyHash() {
     const hash = window.location.hash.replace("#", "");
     const fromConfig = this._panel?.config?.view;
-    const view = VIEWS[hash] ? hash : VIEWS[fromConfig] ? fromConfig : this._view;
+    const isView = (v) => !!VIEWS[v] || v === "settings";
+    const view = isView(hash) ? hash : isView(fromConfig) ? fromConfig : this._view;
     if (view !== this._view || !this._rendered) {
       this._view = view;
       this._syncControls();
@@ -351,7 +358,7 @@ class LogDoctorPanel extends HTMLElement {
   }
 
   _setView(view) {
-    if (!VIEWS[view] || view === this._view) return;
+    if ((!VIEWS[view] && view !== "settings") || view === this._view) return;
     this._view = view;
     history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}#${view}`);
     this._el("confirm").classList.remove("open");
@@ -360,6 +367,7 @@ class LogDoctorPanel extends HTMLElement {
   }
 
   _syncControls() {
+    if (!VIEWS[this._view]) return;
     const view = VIEWS[this._view];
     const st = this._st();
     const filter = this._el("filter");
@@ -499,10 +507,6 @@ class LogDoctorPanel extends HTMLElement {
 
   _render() {
     this._rendered = true;
-    const view = VIEWS[this._view];
-    const st = this._st();
-    const archived = st.tab === "archived";
-
     for (const btn of this.shadowRoot.querySelectorAll(".view")) {
       btn.classList.toggle("active", btn.dataset.view === this._view);
     }
@@ -511,6 +515,20 @@ class LogDoctorPanel extends HTMLElement {
       const open = s.records.filter((r) => !r.resolved).length;
       this.shadowRoot.querySelector(`[data-count="${name}"]`).textContent = s.loaded ? `(${open})` : "";
     }
+    const settings = this._el("settings");
+    const showSettings = this._view === "settings";
+    this._el("list-card").hidden = showSettings;
+    if (showSettings && settings.hidden) {
+      settings.hidden = false;
+      settings.activate();
+    } else if (!showSettings) {
+      settings.hidden = true;
+    }
+    if (showSettings) return;
+
+    const view = VIEWS[this._view];
+    const st = this._st();
+    const archived = st.tab === "archived";
     const openCount = st.records.filter((r) => !r.resolved).length;
     const archivedCount = st.records.length - openCount;
     for (const tab of this.shadowRoot.querySelectorAll(".tab")) {
@@ -757,6 +775,7 @@ class LogDoctorPanel extends HTMLElement {
   // -- events ---------------------------------------------------------
 
   _onChange(ev) {
+    if (!VIEWS[this._view]) return;
     const target = ev.target;
     const st = this._st();
     if (target.dataset.row) {
@@ -791,6 +810,13 @@ class LogDoctorPanel extends HTMLElement {
     const viewBtn = find("view");
     if (viewBtn) {
       this._setView(viewBtn.dataset.view);
+      return;
+    }
+    if (!VIEWS[this._view]) {
+      // Settings view: it handles its own clicks; only the menu is ours.
+      if (find("action")?.dataset.action === "menu") {
+        this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
+      }
       return;
     }
     const expand = find("expand");
@@ -881,4 +907,510 @@ class LogDoctorPanel extends HTMLElement {
 
 if (!customElements.get("log-doctor-panel")) {
   customElements.define("log-doctor-panel", LogDoctorPanel);
+}
+
+// -- Settings view ------------------------------------------------------
+//
+// Everything from the integration's Configure dialog plus its entities
+// (the Auto-investigate switch, the Scan now button, the clear_history
+// service). Saving goes through log_doctor/settings/update, which
+// validates like the Configure dialog and reloads WP Log Doctor.
+
+const SWS = {
+  GET: "log_doctor/settings/get",
+  UPDATE: "log_doctor/settings/update",
+  AUTO_INVESTIGATE: "log_doctor/settings/set_auto_investigate",
+  SCAN_NOW: "log_doctor/settings/scan_now",
+  CLEAR_HISTORY: "log_doctor/settings/clear_history",
+};
+
+const SETTINGS_SECTIONS = [
+  {
+    title: "Daily scan",
+    fields: [
+      { key: "scan_time", label: "Daily scan time", type: "time" },
+      { key: "min_severity", label: "Minimum severity to report", type: "select", options: "severity_levels" },
+      { key: "lookback_hours", label: "Lookback window on the first scan", type: "number", min: 1, max: 168, unit: "hours" },
+      { key: "log_path", label: "Log file path", type: "text" },
+      { key: "include_supervisor_logs", label: "Also check Supervisor, Host and add-on logs", help: "Home Assistant OS / Supervised only.", type: "bool" },
+      { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review and Automation failures entries are kept." },
+    ],
+  },
+  {
+    title: "Automation monitoring",
+    fields: [
+      { key: "monitor_automations", label: "Notify me when any automation fails", type: "bool" },
+      { key: "monitor_missed_schedules", label: "After a restart, report scheduled runs missed while offline", type: "bool" },
+      { key: "missed_schedule_min_pattern_minutes", label: "Skip time patterns repeating more often than", type: "number", min: 0, max: 1440, unit: "minutes", help: "0 checks every time pattern." },
+    ],
+  },
+  {
+    title: "Notifications",
+    fields: [
+      { key: "automation_failure_notify_device", label: "Also push automation failures and missed schedules to", type: "device" },
+      { key: "mobile_notify_service", label: "Mobile notify service for the daily scan summary", type: "text", datalist: "notify_services", help: "e.g. mobile_app_pixel_10. Leave blank for none." },
+    ],
+  },
+  {
+    title: "Investigation (OpenAI)",
+    fields: [
+      { key: "openai_api_key", label: "OpenAI API key", type: "apikey", help: "Enables automatic investigation of each scan's anomalies." },
+      { key: "max_investigated", label: "Max anomalies investigated per scan", type: "number", min: 0, max: 100 },
+    ],
+    autoInvestigate: true,
+  },
+];
+
+const SETTINGS_STYLE = `
+:host { display: block; }
+:host([hidden]) { display: none; }
+* { box-sizing: border-box; }
+.card {
+  background: var(--card-background-color, #fff);
+  border-radius: var(--ha-card-border-radius, 12px);
+  border: 1px solid var(--divider-color, #e0e0e0);
+  margin-bottom: 12px; overflow: hidden;
+}
+h2 { font-size: 16px; font-weight: 500; margin: 0; padding: 14px 16px 6px; }
+.field {
+  display: grid; grid-template-columns: minmax(200px, 1fr) minmax(200px, 1.2fr);
+  gap: 4px 16px; align-items: center; padding: 10px 16px;
+  border-top: 1px solid var(--divider-color, #e0e0e0);
+}
+.field:first-of-type { border-top: 0; }
+.field label { font-weight: 500; }
+.help { grid-column: 1; color: var(--secondary-text-color, #727272); font-size: 12px; }
+.control { display: flex; align-items: center; gap: 8px; grid-row: 1 / span 2; grid-column: 2; }
+.control input[type=text], .control input[type=password], .control input[type=number],
+.control input[type=time], .control select {
+  font: inherit; padding: 8px 10px; border-radius: 6px; width: 100%; min-width: 0;
+  border: 1px solid var(--divider-color, #ccc);
+  background: var(--secondary-background-color, #f5f5f5); color: var(--primary-text-color, #212121);
+}
+.control input[type=number] { max-width: 120px; }
+.unit { color: var(--secondary-text-color, #727272); white-space: nowrap; }
+.changed > label::after { content: " •"; color: var(--primary-color, #03a9f4); }
+input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary-color, #03a9f4); cursor: pointer; }
+button {
+  font: inherit; font-weight: 500; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--primary-color, #03a9f4); background: var(--primary-color, #03a9f4);
+  color: var(--text-primary-color, #fff); white-space: nowrap;
+}
+button.secondary { background: transparent; color: var(--primary-color, #03a9f4); }
+button.danger { border-color: var(--error-color, #db4437); background: transparent; color: var(--error-color, #db4437); }
+button:disabled { opacity: 0.4; cursor: default; }
+.savebar {
+  position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 16px; margin-bottom: 12px;
+  background: var(--card-background-color, #fff); border: 1px solid var(--divider-color, #e0e0e0);
+  border-radius: var(--ha-card-border-radius, 12px);
+}
+.savebar .msg { flex: 1 1 240px; color: var(--secondary-text-color, #727272); }
+.msg.error { color: var(--error-color, #db4437); }
+.msg.ok { color: var(--success-color, #43a047); }
+.status { padding: 4px 16px 12px; display: grid; gap: 4px; }
+.status div { word-break: break-all; }
+.status .k { color: var(--secondary-text-color, #727272); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--divider-color, #e0e0e0); align-items: center; }
+.actions .msg { flex: 1 1 200px; color: var(--secondary-text-color, #727272); }
+.loading { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #727272); }
+@media (max-width: 700px) {
+  .field { grid-template-columns: 1fr; }
+  .control { grid-row: auto; grid-column: 1; }
+}
+`;
+
+class LogDoctorSettings extends HTMLElement {
+  constructor() {
+    super();
+    this._hass = null;
+    this._data = null;
+    this._values = {};
+    this._apiKey = { value: "", clear: false };
+    this._busy = false;
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `<style>${SETTINGS_STYLE}</style><div class="loading">Loading settings…</div>`;
+    this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
+    this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
+    this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+  }
+
+  set hass(hass) { this._hass = hass; }
+
+  // Called whenever the Settings view is shown.
+  activate() {
+    if (!this._dirty()) this._load();
+  }
+
+  async _load(message) {
+    if (!this._hass) return;
+    try {
+      this._data = await this._hass.callWS({ type: SWS.GET });
+    } catch (err) {
+      this.shadowRoot.querySelector(".loading")?.replaceChildren(`Couldn't load settings: ${err.message || err.code || err}`);
+      return;
+    }
+    this._values = { ...this._data.options };
+    this._apiKey = { value: "", clear: false };
+    this._build();
+    if (message) this._message(message, "ok");
+  }
+
+  // -- values ---------------------------------------------------------
+
+  _normalize(key, value) {
+    const field = SETTINGS_SECTIONS.flatMap((s) => s.fields).find((f) => f.key === key);
+    if (!field) return value;
+    if (field.type === "number") return value === "" || value === null || value === undefined ? value : Number(value);
+    if (field.type === "time" && typeof value === "string" && value.length === 5) return `${value}:00`;
+    if (field.type === "device") return value || null;
+    if (field.type === "text") return value ?? "";
+    return value;
+  }
+
+  _changes() {
+    const changes = {};
+    for (const field of SETTINGS_SECTIONS.flatMap((s) => s.fields)) {
+      if (field.type === "apikey") continue;
+      const before = this._normalize(field.key, this._data.options[field.key]);
+      const after = this._normalize(field.key, this._values[field.key]);
+      if (before !== after && !(before == null && after == null)) changes[field.key] = after;
+    }
+    if (this._apiKey.value) changes.openai_api_key = this._apiKey.value;
+    return changes;
+  }
+
+  _dirty() {
+    return !!this._data && (Object.keys(this._changes()).length > 0 || this._apiKey.clear);
+  }
+
+  // -- rendering ------------------------------------------------------
+
+  _build() {
+    const d = this._data;
+    const root = this.shadowRoot;
+    root.replaceChildren();
+    const style = document.createElement("style");
+    style.textContent = SETTINGS_STYLE;
+    root.appendChild(style);
+
+    for (const section of SETTINGS_SECTIONS) {
+      const card = document.createElement("div");
+      card.className = "card";
+      const h = document.createElement("h2");
+      h.textContent = section.title;
+      card.appendChild(h);
+      for (const field of section.fields) card.appendChild(this._field(field));
+      if (section.autoInvestigate) {
+        card.appendChild(this._toggleRow(
+          "auto_investigate",
+          "Auto-investigate after each scan",
+          d.status.auto_investigate,
+          "Takes effect straight away (the Auto-investigate switch). Only does anything with an API key set.",
+        ));
+      }
+      root.appendChild(card);
+    }
+
+    // Actions and status
+    const card = document.createElement("div");
+    card.className = "card";
+    const h = document.createElement("h2");
+    h.textContent = "Scan and history";
+    card.appendChild(h);
+    const status = document.createElement("div");
+    status.className = "status";
+    status.dataset.el = "status";
+    card.appendChild(status);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(
+      this._button("Scan now", "scan"),
+      this._button("Clear history", "ask-clear-history", "danger"),
+    );
+    const amsg = document.createElement("span");
+    amsg.className = "msg";
+    amsg.dataset.el = "action-msg";
+    actions.appendChild(amsg);
+    card.appendChild(actions);
+    root.appendChild(card);
+    this._renderStatus();
+
+    // Save bar
+    const bar = document.createElement("div");
+    bar.className = "savebar";
+    const msg = document.createElement("span");
+    msg.className = "msg";
+    msg.dataset.el = "msg";
+    bar.append(msg, this._button("Discard changes", "discard", "secondary"), this._button("Save", "save"));
+    root.appendChild(bar);
+    this._refreshDirty();
+  }
+
+  _field(field) {
+    const d = this._data;
+    const row = document.createElement("div");
+    row.className = "field";
+    row.dataset.field = field.key;
+    const label = document.createElement("label");
+    label.textContent = field.label;
+    const id = `f-${field.key}`;
+    label.htmlFor = id;
+    row.appendChild(label);
+    const control = document.createElement("div");
+    control.className = "control";
+    let input;
+    const value = this._values[field.key];
+
+    if (field.type === "bool") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!value;
+    } else if (field.type === "select") {
+      input = document.createElement("select");
+      for (const opt of d[field.options] || []) input.appendChild(new Option(opt, opt));
+      input.value = value ?? "";
+    } else if (field.type === "device") {
+      input = document.createElement("select");
+      input.appendChild(new Option("None", ""));
+      const devices = d.mobile_devices || [];
+      for (const dev of devices) input.appendChild(new Option(dev.name, dev.id));
+      if (value && !devices.some((dev) => dev.id === value)) {
+        input.appendChild(new Option("(device no longer available)", value));
+      }
+      input.value = value || "";
+    } else if (field.type === "apikey") {
+      input = document.createElement("input");
+      input.type = "password";
+      input.autocomplete = "off";
+      input.placeholder = d.openai_api_key_set ? "Set - leave blank to keep it" : "Not set";
+      if (d.openai_api_key_set) {
+        const remove = document.createElement("label");
+        remove.style.cssText = "display:flex;align-items:center;gap:6px;font-weight:400;white-space:nowrap";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.dataset.el = "clear-key";
+        remove.append(cb, "Remove key");
+        control.appendChild(remove);
+      }
+    } else {
+      input = document.createElement("input");
+      input.type = field.type === "number" ? "number" : field.type === "time" ? "time" : "text";
+      if (field.type === "time") input.step = 1;
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      if (field.type === "number") input.step = 1;
+      input.value = value ?? (field.key === "log_path" ? d.default_log_path : "");
+      if (field.datalist) {
+        const list = document.createElement("datalist");
+        list.id = `dl-${field.key}`;
+        for (const name of d[field.datalist] || []) list.appendChild(new Option(name));
+        input.setAttribute("list", list.id);
+        control.appendChild(list);
+      }
+    }
+    input.id = id;
+    input.dataset.key = field.key;
+    control.prepend(input);
+    if (field.unit) {
+      const unit = document.createElement("span");
+      unit.className = "unit";
+      unit.textContent = field.unit;
+      control.appendChild(unit);
+    }
+    row.appendChild(control);
+    if (field.help) {
+      const help = document.createElement("div");
+      help.className = "help";
+      help.textContent = field.help;
+      row.appendChild(help);
+    }
+    return row;
+  }
+
+  _toggleRow(key, labelText, checked, helpText) {
+    const row = document.createElement("div");
+    row.className = "field";
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    label.htmlFor = `t-${key}`;
+    const control = document.createElement("div");
+    control.className = "control";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = `t-${key}`;
+    input.checked = !!checked;
+    input.dataset.toggle = key;
+    control.appendChild(input);
+    const help = document.createElement("div");
+    help.className = "help";
+    help.textContent = helpText;
+    row.append(label, control, help);
+    return row;
+  }
+
+  _button(text, action, cls = "") {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.dataset.sact = action;
+    if (cls) b.className = cls;
+    return b;
+  }
+
+  _renderStatus() {
+    const el = this.shadowRoot.querySelector('[data-el="status"]');
+    if (!el) return;
+    const s = this._data.status || {};
+    const when = s.last_scan ? new Date(s.last_scan).toLocaleString() : "never";
+    const rows = [
+      ["Last scan", when],
+      ["Anomalies in the last scan", s.anomalies === undefined ? "-" : `${s.anomalies} (${s.new} new)`],
+      ["Latest review file", s.report_file || "-"],
+      ["Reviews folder", s.reviews_dir],
+      ["Automation failure log", s.failure_log],
+    ];
+    el.replaceChildren(...rows.map(([k, v]) => {
+      const div = document.createElement("div");
+      const key = document.createElement("span");
+      key.className = "k";
+      key.textContent = `${k}: `;
+      div.append(key, v);
+      return div;
+    }));
+  }
+
+  _refreshDirty() {
+    const changes = this._changes();
+    for (const row of this.shadowRoot.querySelectorAll(".field[data-field]")) {
+      const key = row.dataset.field;
+      const changed = key in changes || (key === "openai_api_key" && this._apiKey.clear);
+      row.classList.toggle("changed", changed);
+    }
+    const dirty = this._dirty();
+    const save = this.shadowRoot.querySelector('[data-sact="save"]');
+    const discard = this.shadowRoot.querySelector('[data-sact="discard"]');
+    if (save) save.disabled = !dirty || this._busy;
+    if (discard) discard.disabled = !dirty || this._busy;
+    if (!this._busy) {
+      this._message(dirty ? "Unsaved changes. Saving restarts WP Log Doctor for a moment." : "");
+    }
+  }
+
+  _message(text, kind = "", which = "msg") {
+    const el = this.shadowRoot.querySelector(`[data-el="${which}"]`);
+    if (!el) return;
+    el.textContent = text;
+    el.className = `msg ${kind}`;
+  }
+
+  // -- events ---------------------------------------------------------
+
+  _onInput(ev) {
+    const t = ev.target;
+    if (t.dataset.key) {
+      if (t.dataset.key === "openai_api_key") this._apiKey.value = t.value;
+      else this._values[t.dataset.key] = t.type === "checkbox" ? t.checked : t.value;
+      this._refreshDirty();
+    } else if (t.dataset.el === "clear-key") {
+      this._apiKey.clear = t.checked;
+      this._refreshDirty();
+    } else if (t.dataset.toggle === "auto_investigate" && ev.type === "change") {
+      this._setAutoInvestigate(t);
+    }
+  }
+
+  async _setAutoInvestigate(input) {
+    input.disabled = true;
+    try {
+      await this._hass.callWS({ type: SWS.AUTO_INVESTIGATE, enabled: input.checked });
+      this._message(`Auto-investigate turned ${input.checked ? "on" : "off"}.`, "ok", "action-msg");
+    } catch (err) {
+      input.checked = !input.checked;
+      this._message(`Couldn't change Auto-investigate: ${err.message || err.code || err}`, "error", "action-msg");
+    } finally {
+      input.disabled = false;
+    }
+  }
+
+  async _onClick(ev) {
+    const btn = ev.composedPath().find((el) => el.dataset && el.dataset.sact);
+    if (!btn || btn.disabled) return;
+    switch (btn.dataset.sact) {
+      case "discard":
+        this._values = { ...this._data.options };
+        this._apiKey = { value: "", clear: false };
+        this._build();
+        break;
+      case "save":
+        await this._save();
+        break;
+      case "scan":
+        btn.disabled = true;
+        this._message("Scanning…", "", "action-msg");
+        try {
+          const res = await this._hass.callWS({ type: SWS.SCAN_NOW });
+          this._data.status = { ...this._data.status, ...res.status };
+          this._renderStatus();
+          this._message("Scan finished. New anomalies are in the Log review.", "ok", "action-msg");
+        } catch (err) {
+          this._message(`Scan failed: ${err.message || err.code || err}`, "error", "action-msg");
+        } finally {
+          btn.disabled = false;
+        }
+        break;
+      case "ask-clear-history":
+        btn.textContent = "Click again to confirm";
+        btn.dataset.sact = "clear-history";
+        this._message(
+          "Forgets which anomalies were already reported, so the next scan reports everything as new. The Log review list is not affected.",
+          "", "action-msg",
+        );
+        break;
+      case "clear-history":
+        btn.disabled = true;
+        try {
+          await this._hass.callWS({ type: SWS.CLEAR_HISTORY });
+          this._message("History cleared.", "ok", "action-msg");
+        } catch (err) {
+          this._message(`Couldn't clear history: ${err.message || err.code || err}`, "error", "action-msg");
+        } finally {
+          btn.textContent = "Clear history";
+          btn.dataset.sact = "ask-clear-history";
+          btn.disabled = false;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  async _save() {
+    const options = this._changes();
+    this._busy = true;
+    this._refreshDirty();
+    this._message("Saving…");
+    try {
+      const res = await this._hass.callWS({
+        type: SWS.UPDATE,
+        options,
+        clear_openai_api_key: this._apiKey.clear,
+      });
+      this._busy = false;
+      if (res.changed) {
+        this._message("Saved. WP Log Doctor is restarting…", "ok");
+        // The reload takes a moment; read the settings back afterwards.
+        setTimeout(() => this._load("Saved."), 2500);
+      } else {
+        await this._load("Nothing to change.");
+      }
+    } catch (err) {
+      this._busy = false;
+      this._refreshDirty();
+      this._message(`Not saved: ${err.message || err.code || err}`, "error");
+    }
+  }
+}
+
+if (!customElements.get("log-doctor-settings")) {
+  customElements.define("log-doctor-settings", LogDoctorSettings);
 }

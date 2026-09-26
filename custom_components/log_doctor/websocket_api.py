@@ -20,6 +20,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
+from . import settings_api
 from .const import DATA_ANOMALY_STORE, DATA_FAILURE_STORE
 from .review_list import ReviewList
 
@@ -35,6 +36,7 @@ _IDS = vol.All([str], vol.Length(max=100_000))
 
 @callback
 def async_setup(hass: HomeAssistant) -> None:
+    settings_api.async_setup(hass)
     websocket_api.async_register_command(hass, websocket_subscribe)
     websocket_api.async_register_command(hass, websocket_resolve)
     websocket_api.async_register_command(hass, websocket_restore)
