@@ -29,6 +29,13 @@ CONF_MAX_INVESTIGATED = "max_investigated"
 CONF_MONITOR_AUTOMATIONS = "monitor_automations"
 DEFAULT_MONITOR_AUTOMATIONS = True
 CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE = "automation_failure_notify_device"
+# Devices & integrations checks (health_monitor.py).
+CONF_MONITOR_HEALTH = "monitor_health"
+DEFAULT_MONITOR_HEALTH = True
+CONF_OFFLINE_HOURS = "offline_hours"
+DEFAULT_OFFLINE_HOURS = 1
+CONF_BATTERY_THRESHOLD = "battery_threshold"
+DEFAULT_BATTERY_THRESHOLD = 20
 CONF_MONITOR_MISSED_SCHEDULES = "monitor_missed_schedules"
 DEFAULT_MONITOR_MISSED_SCHEDULES = True
 # Time pattern triggers repeating more often than this many minutes are left
@@ -63,6 +70,7 @@ NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
 # hass.data[DOMAIN], which only holds coordinators keyed by entry ID.
 DATA_FAILURE_STORE = f"{DOMAIN}_failure_store"
 DATA_ANOMALY_STORE = f"{DOMAIN}_anomaly_store"
+DATA_HEALTH_STORE = f"{DOMAIN}_health_store"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
 # The Log Doctor sidebar panel (see panel.py / frontend/), with a "Log

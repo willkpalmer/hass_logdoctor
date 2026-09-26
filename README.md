@@ -153,11 +153,13 @@ All of these can be changed later from the **Settings** view of the
 
 ## Automation failure alerts
 
-With **Notify me when any automation fails** on (the default), Log Doctor
-watches every automation run as it happens - not just at the daily scan -
-and posts a persistent notification within a couple of seconds of any run
-failing: an action that raised an error, a service that doesn't exist, a
-template that couldn't be rendered, invalid service data, and so on.
+With **Notify me when any automation or script fails** on (the default),
+Log Doctor watches every automation and script run as it happens - not
+just at the daily scan - and posts a persistent notification within a
+couple of seconds of any run failing: an action that raised an error, a
+service that doesn't exist, a template that couldn't be rendered, invalid
+service data, and so on. Scripts get the same notifications, titled
+"Script failed: <name>" and linking to the script's traces.
 
 - There's **one notification per automation**
   (`log_doctor_automation_failure_<object_id>`), titled
@@ -299,10 +301,56 @@ they're a record of each scan, while this list is what's still open.
 
 ### Automation failures
 
-Failed runs and runs missed while Home Assistant was offline. Columns:
-**Date**, **Time** (sorts by time of day, so everything that fails around
-03:00 sorts together), **Automation** (links to its traces) and
-**Reason**; filter to only failed or only missed runs.
+Failed automation and script runs, and automation runs missed while Home
+Assistant was offline. Columns: **Date**, **Time** (sorts by time of day,
+so everything that fails around 03:00 sorts together), **Automation /
+script** (links to its traces; scripts are marked **Script**) and
+**Reason**; filter to failed runs, missed runs or scripts only. A script
+that fails when called from an automation appears twice - once for each,
+since both runs failed.
+
+### Devices & integrations
+
+Things that have stopped working, checked every 5 minutes (and 5 minutes
+after Home Assistant starts, once things have had time to come up):
+
+- **Offline** - a device whose entities have been unavailable for at
+  least the time set in Settings (default 1 hour), or an entity with no
+  device. Shown as "Offline", or "2 of 5 entities unavailable" when only
+  some of its entities are down. Diagnostic entities alone (e.g. a firmware
+  update entity) don't count, and devices of an integration that failed to
+  load are left to that integration's entry, so one broken integration
+  isn't reported as dozens of devices.
+- **Battery** - a battery below the level set in Settings (default 20%),
+  one entry per device.
+- **Integration** - an integration that failed to set up, is retrying
+  setup, or failed to migrate, with the reason Home Assistant gives.
+  Disabled integrations aren't checked.
+- **Repair** - an issue from Home Assistant's own **Repairs** page that
+  hasn't been ignored there, with its severity and, if it has one, the
+  version it breaks in.
+
+Columns: **Type**, **Name** (with its area and integration; links to the
+device, integration or Repairs page), **Problem** and **Since**; filter by
+type. Click ▸ to see which entities are affected, each linking to its
+history.
+
+These problems end by themselves, so this list keeps up with them:
+
+- When a problem clears up - the device comes back, the battery is
+  replaced, the integration loads, the repair is fixed - it moves to
+  **Archived** automatically, marked **Cleared**.
+- **Mark resolved** on a problem that's still there archives it as
+  acknowledged; it stays archived for as long as it lasts.
+- If an archived problem comes back after it had cleared, it returns to
+  **Open**, marked **Recurred**.
+- **Clear archive** deletes archived entries; one that's still a problem
+  reappears on the next check.
+
+Home Assistant resets every entity's "last changed" time when it restarts,
+so a device that was already offline before a restart counts from the
+restart - unless it was already on this list, which keeps its original
+**Since**. Nothing here sends notifications; it's a list to check.
 
 ### Settings
 
@@ -312,8 +360,11 @@ entities do, on one page (`/log-doctor#settings`):
 - **Daily scan** - scan time, minimum severity, first-scan lookback, log
   file path, Supervisor/Host/add-on logs, and how long reports and list
   entries are kept.
-- **Automation monitoring** - failure alerts, missed-schedule alerts, and
+- **Automations & scripts** - failure alerts, missed-schedule alerts, and
   which time patterns to skip.
+- **Devices & integrations** - turn the checks on or off, how long a
+  device must be offline before it's reported, and the battery level to
+  report below (0 turns battery checks off).
 - **Notifications** - the phone to push automation failures and missed
   schedules to (picked from your Companion app devices), and the notify
   service for the daily scan summary (with suggestions).

@@ -1,20 +1,25 @@
-"""Real-time automation failure monitor.
+"""Real-time automation and script failure monitor.
 
-Unlike the daily scan, this watches every automation run as it happens and
-posts a persistent notification the moment one fails - and, if a Mobile App
-device is chosen, a push notification to that phone too. It never touches
-the automation itself - it only reports, like the rest of Log Doctor.
+Unlike the daily scan, this watches every automation and script run as it
+happens and posts a persistent notification the moment one fails - and, if
+a Mobile App device is chosen, a push notification to that phone too. It
+never touches the automation or script itself - it only reports, like the
+rest of Log Doctor.
 
-Home Assistant doesn't fire an event when an automation run fails, but
-every automation logs its failures through its own child logger,
+Home Assistant doesn't fire an event when a run fails, but every automation
+logs its failures through its own child logger,
 ``homeassistant.components.automation.<object_id>`` (the automation's
-action script uses the same logger). So this attaches a logging handler to
-the parent ``homeassistant.components.automation`` logger and picks up any
-ERROR-or-worse record from one of those child loggers. A single failed run
-usually produces two records (the script step's "Error executing script"
-plus the automation's own "Error while executing automation"), so records
-for the same automation arriving within a short window are coalesced into
-one notification.
+action script uses the same logger), and every script through
+``homeassistant.components.script.<script key>``. So this attaches a
+logging handler to both parent loggers and picks up any ERROR-or-worse
+record from one of those child loggers. A single failed run usually
+produces more than one record (the step's "Error executing script" plus
+the automation's own "Error while executing automation"), so records for
+the same automation or script arriving within a short window are coalesced
+into one notification.
+
+A script called from an automation that fails is reported twice - once for
+the script and once for the automation - since both runs failed.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ from datetime import datetime
 from typing import Callable
 
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
@@ -36,6 +42,11 @@ from .mobile_push import resolve_mobile_app_notify_service
 _LOGGER = logging.getLogger(__name__)
 
 _AUTOMATION_LOGGER = "homeassistant.components.automation"
+_SCRIPT_LOGGER = "homeassistant.components.script"
+_WATCHED = {_AUTOMATION_LOGGER: "automation", _SCRIPT_LOGGER: "script"}
+
+# Events fired when a run starts, used for the failure log's time column.
+_STARTED_EVENTS = ("automation_triggered", "script_started")
 
 # How long to wait for further records from the same failed run before
 # posting the notification.
@@ -56,6 +67,13 @@ class _PendingFailure:
     first_seen: datetime
     errors: list[str] = field(default_factory=list)
     timer: asyncio.TimerHandle | None = None
+    # The automation's object ID / script's key from the logger name.
+    key: str = ""
+
+
+def trace_url(domain: str, config_id: str) -> str:
+    """Where an automation's or script's traces are in the UI."""
+    return f"/config/{domain}/trace/{config_id}"
 
 
 class _AutomationErrorHandler(logging.Handler):
@@ -70,9 +88,10 @@ class _AutomationErrorHandler(logging.Handler):
         self._monitor = monitor
 
     def emit(self, record: logging.LogRecord) -> None:
-        if not record.name.startswith(f"{_AUTOMATION_LOGGER}."):
+        parent, _, key = record.name.rpartition(".")
+        domain = _WATCHED.get(parent)
+        if domain is None or not key:
             return
-        object_id = record.name[len(_AUTOMATION_LOGGER) + 1 :]
         try:
             message = record.getMessage()
             if record.exc_info and record.exc_info[1] is not None:
@@ -80,14 +99,14 @@ class _AutomationErrorHandler(logging.Handler):
                 if str(exc) not in message:
                     message += f" ({type(exc).__name__}: {exc})"
             self._monitor.hass.loop.call_soon_threadsafe(
-                self._monitor.async_record, object_id, message, record.created
+                self._monitor.async_record, domain, key, message, record.created
             )
         except Exception:  # noqa: BLE001 - a logging handler must never raise
             self.handleError(record)
 
 
 class AutomationFailureMonitor:
-    """Posts a persistent notification whenever an automation run fails."""
+    """Posts a persistent notification whenever an automation or script run fails."""
 
     def __init__(
         self,
@@ -104,21 +123,24 @@ class AutomationFailureMonitor:
         self.notify_device_id = notify_device_id
         self._handler = _AutomationErrorHandler(self)
         self._pending: dict[str, _PendingFailure] = {}
-        # Failures per automation since this monitor started (i.e. since the
-        # last Home Assistant restart or integration reload).
+        # Keyed by entity_id throughout.
+        # Failures per automation/script since this monitor started (i.e.
+        # since the last Home Assistant restart or integration reload).
         self._failure_counts: dict[str, int] = {}
-        # When each automation's most recent run was triggered, from the
-        # automation_triggered event, for the failure log's time column.
+        # When each one's most recent run started, from the
+        # automation_triggered / script_started events.
         self._triggered_at: dict[str, datetime] = {}
-        self._unsub_triggered: Callable[[], None] | None = None
+        self._unsubs: list[Callable[[], None]] = []
 
     @callback
     def async_start(self) -> Callable[[], None]:
         """Start watching; returns a callback that stops watching."""
-        logging.getLogger(_AUTOMATION_LOGGER).addHandler(self._handler)
-        self._unsub_triggered = self.hass.bus.async_listen(
-            "automation_triggered", self._async_on_triggered
-        )
+        for logger_name in _WATCHED:
+            logging.getLogger(logger_name).addHandler(self._handler)
+        self._unsubs = [
+            self.hass.bus.async_listen(event_type, self._async_on_triggered)
+            for event_type in _STARTED_EVENTS
+        ]
         return self._async_stop
 
     @callback
@@ -129,47 +151,67 @@ class AutomationFailureMonitor:
 
     @callback
     def _async_stop(self) -> None:
-        logging.getLogger(_AUTOMATION_LOGGER).removeHandler(self._handler)
-        if self._unsub_triggered is not None:
-            self._unsub_triggered()
-            self._unsub_triggered = None
+        for logger_name in _WATCHED:
+            logging.getLogger(logger_name).removeHandler(self._handler)
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs = []
         for pending in self._pending.values():
             if pending.timer:
                 pending.timer.cancel()
         self._pending.clear()
 
+    def _entity_id(self, domain: str, key: str) -> str:
+        """The entity for an automation's object ID or a script's key.
+
+        An automation's logger is named after its entity's object ID. A
+        script's is named after its key in the configuration, which is also
+        its entity's unique ID - normally the object ID too, unless the
+        entity was renamed.
+        """
+        if domain == "script":
+            entity_id = er.async_get(self.hass).async_get_entity_id("script", "script", key)
+            if entity_id:
+                return entity_id
+        return f"{domain}.{key}"
+
     @callback
-    def async_record(self, object_id: str, message: str, created: float) -> None:
-        # Other modules in the automation package (e.g. reproduce_state) log
-        # under the same parent logger; only count records that belong to an
-        # actual automation entity.
-        if self.hass.states.get(f"automation.{object_id}") is None:
+    def async_record(self, domain: str, key: str, message: str, created: float) -> None:
+        entity_id = self._entity_id(domain, key)
+        # Other modules in these packages (e.g. reproduce_state) log under
+        # the same parent loggers; only count records that belong to an
+        # actual automation or script entity.
+        if self.hass.states.get(entity_id) is None:
             return
 
-        pending = self._pending.get(object_id)
+        pending = self._pending.get(entity_id)
         if pending is None:
             pending = _PendingFailure(first_seen=dt_util.utc_from_timestamp(created))
-            self._pending[object_id] = pending
+            pending.key = key
+            self._pending[entity_id] = pending
             pending.timer = self.hass.loop.call_later(
-                _COALESCE_SECONDS, self._async_flush, object_id
+                _COALESCE_SECONDS, self._async_flush, entity_id
             )
         if message not in pending.errors:
             pending.errors.append(message)
 
     @callback
-    def _async_flush(self, object_id: str) -> None:
-        pending = self._pending.pop(object_id, None)
+    def _async_flush(self, entity_id: str) -> None:
+        pending = self._pending.pop(entity_id, None)
         if pending is None:
             return
-        self._failure_counts[object_id] = self._failure_counts.get(object_id, 0) + 1
-        self.hass.async_create_task(self._async_notify(object_id, pending))
+        self._failure_counts[entity_id] = self._failure_counts.get(entity_id, 0) + 1
+        self.hass.async_create_task(self._async_notify(entity_id, pending))
 
-    async def _async_notify(self, object_id: str, pending: _PendingFailure) -> None:
-        entity_id = f"automation.{object_id}"
+    async def _async_notify(self, entity_id: str, pending: _PendingFailure) -> None:
+        domain, _, object_id = entity_id.partition(".")
+        kind = "Script" if domain == "script" else "Automation"
         state = self.hass.states.get(entity_id)
         name = (state and state.attributes.get("friendly_name")) or entity_id
-        config_id = state.attributes.get("id") if state else None
-        count = self._failure_counts[object_id]
+        # What the automation/script editor and traces are addressed by: an
+        # automation's "id", a script's key.
+        config_id = (state.attributes.get("id") if state else None) if domain == "automation" else pending.key
+        count = self._failure_counts[entity_id]
 
         try:
             if self.failure_store is not None:
@@ -202,19 +244,21 @@ class AutomationFailureMonitor:
             lines.append(f"- _…and {hidden} more error(s) - see the log._")
         lines.append("")
         if count > 1:
-            lines.append(f"This automation has failed {count} times since Home Assistant started.")
+            lines.append(f"This {kind.lower()} has failed {count} times since Home Assistant started.")
         if config_id:
-            lines.append(f"[Open the automation's trace](/config/automation/trace/{config_id})")
-        lines.append(f"[Review all automation failures]({PANEL_FAILURES_URL})")
+            lines.append(f"[Open the {kind.lower()}'s trace]({trace_url(domain, config_id)})")
+        lines.append(f"[Review all automation and script failures]({PANEL_FAILURES_URL})")
 
-        notification_id = f"{NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX}{object_id}"
+        # (Automations keep their pre-script-support IDs.)
+        prefix = NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
+        notification_id = f"{prefix}{object_id}" if domain == "automation" else f"{prefix}script_{object_id}"
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
                     "notification_id": notification_id,
-                    "title": f"Automation failed: {name}",
+                    "title": f"{kind} failed: {name}",
                     "message": "\n".join(lines).rstrip(),
                 },
                 blocking=True,
@@ -222,13 +266,14 @@ class AutomationFailureMonitor:
         except Exception:  # noqa: BLE001 - never let a notification failure escalate
             # Deliberately logged under log_doctor's own logger, never the
             # automation one, so this can't feed back into the handler.
-            _LOGGER.exception("Failed to post automation failure notification for %s", entity_id)
+            _LOGGER.exception("Failed to post failure notification for %s", entity_id)
 
         if self.notify_device_id:
-            await self._async_push(name, pending, count, config_id, notification_id)
+            await self._async_push(domain, name, pending, count, config_id, notification_id)
 
     async def _async_push(
         self,
+        domain: str,
         name: str,
         pending: _PendingFailure,
         count: int,
@@ -257,15 +302,19 @@ class AutomationFailureMonitor:
             "tag": tag,
         }
         if config_id:
-            trace_url = f"/config/automation/trace/{config_id}"
-            data["url"] = trace_url  # iOS: open on tap
-            data["clickAction"] = trace_url  # Android: open on tap
+            url = trace_url(domain, config_id)
+            data["url"] = url  # iOS: open on tap
+            data["clickAction"] = url  # Android: open on tap
 
         try:
             await self.hass.services.async_call(
                 "notify",
                 service,
-                {"title": f"Automation failed: {name}", "message": message, "data": data},
+                {
+                    "title": f"{'Script' if domain == 'script' else 'Automation'} failed: {name}",
+                    "message": message,
+                    "data": data,
+                },
                 blocking=True,
             )
         except Exception:  # noqa: BLE001 - never let a notification failure escalate

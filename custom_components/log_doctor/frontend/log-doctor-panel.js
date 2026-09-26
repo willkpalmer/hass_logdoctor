@@ -1,10 +1,13 @@
 // WP Log Doctor - sidebar panel.
 //
 // A self-contained web component (no build step, no external libraries)
-// with three views. Two are reviewable lists with Open and Archived tabs:
+// with four views. Three are reviewable lists with Open and Archived tabs:
 //
 //   #logs      Log review - the anomalies the daily scans reported
-//   #failures  Automation failures - failed and missed automation runs
+//   #failures  Automation failures - failed automation and script runs,
+//              and scheduled runs missed while Home Assistant was offline
+//   #health    Devices & integrations - offline devices, low batteries,
+//              integrations that failed to load, and Repairs issues
 //
 // and #settings holds all of WP Log Doctor's settings (see
 // LogDoctorSettings at the end of this file).
@@ -133,7 +136,11 @@ a:hover { text-decoration: underline; }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.recurred { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
-.chip.known { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
+.chip.known, .chip.recovered { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
+.chip.offline, .chip.integration { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
+.chip.battery { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.repair, .chip.script { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
+.entity-list { margin: 0; padding-left: 18px; font-size: 13px; }
 .empty, .status { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #727272); }
 .more { padding: 12px; text-align: center; }
 .footer { padding: 8px 16px 12px; color: var(--secondary-text-color, #727272); font-size: 12px; }
@@ -173,6 +180,7 @@ const TEMPLATE = `
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
+    <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
     <button class="view" data-view="settings">Settings</button>
   </div>
   <log-doctor-settings data-el="settings" hidden></log-doctor-settings>
@@ -242,9 +250,10 @@ const VIEWS = {
   failures: {
     list: "failures",
     noun: ["entry", "entries"],
-    filterPlaceholder: "Filter by automation or reason",
-    kinds: [["", "Failed and missed"], ["failed", "Failed only"], ["missed", "Missed only"]],
+    filterPlaceholder: "Filter by name or reason",
+    kinds: [["", "Everything"], ["failed", "Failed runs"], ["missed", "Missed runs"], ["script", "Scripts only"]],
     kindOf: (r) => (r.reason.startsWith("Missed:") ? "missed" : r.reason.startsWith("Failed:") ? "failed" : ""),
+    matches: (r, kind) => (kind === "script" ? r.entity_id.startsWith("script.") : VIEWS.failures.kindOf(r) === kind),
     search: (r) => `${r.name} ${r.entity_id} ${r.reason}`,
     defaultSort: { key: "date", dir: -1 },
     empty: {
@@ -255,7 +264,7 @@ const VIEWS = {
       { key: "date", label: "Date", firstDir: -1 },
       // Time of day, so e.g. everything failing around 03:00 sorts together.
       { key: "time", label: "Time" },
-      { key: "name", label: "Automation" },
+      { key: "name", label: "Automation / script" },
       { key: "reason", label: "Reason" },
     ],
     compare: {
@@ -267,6 +276,40 @@ const VIEWS = {
     tiebreak: (a, b) => a.when.localeCompare(b.when),
     expandable: false,
   },
+  health: {
+    list: "health",
+    noun: ["entry", "entries"],
+    filterPlaceholder: "Filter by name, area or problem",
+    kinds: [["", "Everything"], ["offline", "Offline devices"], ["battery", "Low batteries"], ["integration", "Integrations"], ["repair", "Repairs"]],
+    kindOf: (r) => r.kind,
+    search: (r) => `${r.name} ${r.sub} ${r.detail} ${(r.entities || []).join(" ")}`,
+    defaultSort: { key: "since", dir: -1 },
+    empty: {
+      open: "No device or integration problems. 🎉",
+      archived: "Nothing archived. Problems that clear up by themselves, and ones you mark resolved, appear here.",
+    },
+    columns: [
+      { key: "kind", label: "Type" },
+      { key: "name", label: "Name" },
+      { key: "detail", label: "Problem" },
+      { key: "since", label: "Since", firstDir: -1 },
+    ],
+    compare: {
+      kind: (a, b) => (HEALTH_KINDS[a.kind]?.order ?? 9) - (HEALTH_KINDS[b.kind]?.order ?? 9),
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      detail: (a, b) => a.detail.localeCompare(b.detail, undefined, { numeric: true }),
+      since: (a, b) => (a.since || "").localeCompare(b.since || ""),
+    },
+    tiebreak: (a, b) => (a.since || "").localeCompare(b.since || ""),
+    expandable: true,
+  },
+};
+
+const HEALTH_KINDS = {
+  offline: { label: "Offline", order: 0 },
+  integration: { label: "Integration", order: 1 },
+  repair: { label: "Repair", order: 2 },
+  battery: { label: "Battery", order: 3 },
 };
 
 const RESOLVED_COLUMN = { key: "resolved", label: "Resolved", firstDir: -1 };
@@ -497,7 +540,7 @@ class LogDoctorPanel extends HTMLElement {
     const archived = st.tab === "archived";
     const needle = st.filter.trim().toLowerCase();
     let rows = st.records.filter((r) => !!r.resolved === archived);
-    if (st.kind) rows = rows.filter((r) => view.kindOf(r) === st.kind);
+    if (st.kind) rows = rows.filter((r) => (view.matches ? view.matches(r, st.kind) : view.kindOf(r) === st.kind));
     if (needle) rows = rows.filter((r) => view.search(r).toLowerCase().includes(needle));
     const primary = this._compare(st.sort.key);
     const dir = st.sort.dir;
@@ -589,15 +632,24 @@ class LogDoctorPanel extends HTMLElement {
       tdCheck.appendChild(cb);
       tr.appendChild(tdCheck);
       if (this._view === "logs") this._logCells(tr, r);
+      else if (this._view === "health") this._healthCells(tr, r);
       else this._failureCells(tr, r);
       if (archived) {
         const td = this._td("", "when");
-        td.append(this._label("Resolved "), this._dateTime(r.resolved));
+        td.append(this._label("Resolved "));
+        if (r.recovered) {
+          const chip = this._chip("recovered", "Cleared");
+          chip.title = "Cleared up by itself";
+          td.appendChild(chip);
+        }
+        td.append(this._dateTime(r.resolved));
         tr.appendChild(td);
       }
       frag.appendChild(tr);
       if (view.expandable && st.expanded.has(r.id)) {
-        frag.appendChild(this._logDetails(r, columns.length + 1));
+        frag.appendChild(this._view === "logs"
+          ? this._logDetails(r, columns.length + 1)
+          : this._healthDetails(r, columns.length + 1));
       }
     }
     body.appendChild(frag);
@@ -715,11 +767,13 @@ class LogDoctorPanel extends HTMLElement {
     tr.appendChild(this._td(this._time(r.when), "when"));
 
     const tdName = document.createElement("td");
+    const domain = (r.entity_id || "automation.").split(".")[0];
+    if (domain === "script") tdName.appendChild(this._chip("script", "Script"));
     if (r.config_id) {
       const a = document.createElement("a");
-      a.href = `/config/automation/trace/${encodeURIComponent(r.config_id)}`;
+      a.href = `/config/${domain === "script" ? "script" : "automation"}/trace/${encodeURIComponent(r.config_id)}`;
       a.dataset.nav = "1";
-      a.title = "Open this automation's traces";
+      a.title = `Open this ${domain === "script" ? "script" : "automation"}'s traces`;
       a.textContent = r.name;
       tdName.appendChild(a);
     } else {
@@ -742,6 +796,79 @@ class LogDoctorPanel extends HTMLElement {
     }
     tdReason.appendChild(document.createTextNode(text));
     tr.appendChild(tdReason);
+  }
+
+  _healthCells(tr, r) {
+    const tdKind = this._td("", "");
+    tdKind.appendChild(this._chip(r.kind, HEALTH_KINDS[r.kind]?.label || r.kind));
+    if (r.recurred) {
+      const chip = this._chip("recurred", "Recurred");
+      chip.title = "Came back after it had cleared up";
+      tdKind.appendChild(chip);
+    }
+    tr.appendChild(tdKind);
+
+    const tdName = document.createElement("td");
+    if (r.link) {
+      const a = document.createElement("a");
+      a.href = r.link;
+      a.dataset.nav = "1";
+      a.textContent = r.name;
+      tdName.appendChild(a);
+    } else {
+      tdName.appendChild(document.createTextNode(r.name));
+    }
+    if (r.sub) {
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = r.sub;
+      tdName.appendChild(sub);
+    }
+    tr.appendChild(tdName);
+
+    const tdDetail = this._td("", "text");
+    if ((r.entities || []).length) {
+      const expand = document.createElement("button");
+      expand.className = "expand";
+      expand.dataset.expand = r.id;
+      expand.title = "Show the entities";
+      expand.textContent = this._st().expanded.has(r.id) ? "▾" : "▸";
+      tdDetail.appendChild(expand);
+    }
+    tdDetail.appendChild(document.createTextNode(r.detail));
+    tr.appendChild(tdDetail);
+
+    const tdSince = this._td("", "when");
+    tdSince.append(this._label("Since "), this._dateTime(r.since));
+    tr.appendChild(tdSince);
+  }
+
+  _healthDetails(r, span) {
+    const tr = document.createElement("tr");
+    tr.className = "details";
+    const td = document.createElement("td");
+    td.colSpan = span;
+    const box = document.createElement("div");
+    box.className = "detail-box";
+    const h = document.createElement("h4");
+    h.textContent = r.kind === "battery" ? "Battery entities" : "Unavailable entities";
+    box.appendChild(h);
+    const ul = document.createElement("ul");
+    ul.className = "entity-list";
+    for (const entityId of r.entities || []) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = `/history?entity_id=${encodeURIComponent(entityId)}`;
+      a.dataset.nav = "1";
+      a.title = "Open its history";
+      a.textContent = entityId;
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+    td.appendChild(box);
+    tr.appendChild(td);
+    return tr;
   }
 
   _td(text, cls) {
@@ -937,11 +1064,19 @@ const SETTINGS_SECTIONS = [
     ],
   },
   {
-    title: "Automation monitoring",
+    title: "Automations & scripts",
     fields: [
-      { key: "monitor_automations", label: "Notify me when any automation fails", type: "bool" },
+      { key: "monitor_automations", label: "Notify me when any automation or script fails", type: "bool" },
       { key: "monitor_missed_schedules", label: "After a restart, report scheduled runs missed while offline", type: "bool" },
       { key: "missed_schedule_min_pattern_minutes", label: "Skip time patterns repeating more often than", type: "number", min: 0, max: 1440, unit: "minutes", help: "0 checks every time pattern." },
+    ],
+  },
+  {
+    title: "Devices & integrations",
+    fields: [
+      { key: "monitor_health", label: "Watch devices, batteries, integrations and Repairs", type: "bool", help: "Checked every 5 minutes." },
+      { key: "offline_hours", label: "Report devices offline for at least", type: "number", min: 1, max: 168, unit: "hours" },
+      { key: "battery_threshold", label: "Report batteries below", type: "number", min: 0, max: 100, unit: "%", help: "0 turns battery checks off." },
     ],
   },
   {

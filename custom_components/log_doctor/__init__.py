@@ -25,6 +25,12 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
+    CONF_BATTERY_THRESHOLD,
+    CONF_MONITOR_HEALTH,
+    CONF_OFFLINE_HOURS,
+    DEFAULT_BATTERY_THRESHOLD,
+    DEFAULT_MONITOR_HEALTH,
+    DEFAULT_OFFLINE_HOURS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
@@ -50,6 +56,7 @@ from .const import (
     DEFAULT_SCAN_MINUTE,
     DEVICE_NAME,
     DATA_ANOMALY_STORE,
+    DATA_HEALTH_STORE,
     DATA_FAILURE_STORE,
     DOMAIN,
     PLATFORMS,
@@ -62,6 +69,8 @@ from .knowledge_base import async_warm_known_issues
 from .missed_schedules import MissedScheduleWatch
 from .failure_log import convert_legacy_failure_log_sync
 from .anomaly_store import AnomalyStore
+from .health_monitor import HealthMonitor
+from .health_store import HealthStore
 from .failure_store import FailureStore
 from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
@@ -108,6 +117,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     anomaly_store = AnomalyStore(hass)
     await anomaly_store.async_load()
     hass.data[DATA_ANOMALY_STORE] = anomaly_store
+    # Offline devices, low batteries, failed integrations and Repairs, for
+    # the panel's Devices & integrations view.
+    health_store = HealthStore(hass)
+    await health_store.async_load()
+    hass.data[DATA_HEALTH_STORE] = health_store
 
     store = LogDoctorStore(hass, entry.entry_id)
     await store.async_load()
@@ -136,6 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         store=store,
         failure_store=failure_store,
         anomaly_store=anomaly_store,
+        health_store=health_store,
     )
 
     hass.data.setdefault(DOMAIN, {})
@@ -180,6 +195,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await watch.async_start()
         entry.async_on_unload(watch.async_stop)
 
+    if options.get(CONF_MONITOR_HEALTH, DEFAULT_MONITOR_HEALTH):
+        health_monitor = HealthMonitor(
+            hass,
+            health_store,
+            offline_after=timedelta(
+                hours=int(options.get(CONF_OFFLINE_HOURS, DEFAULT_OFFLINE_HOURS))
+            ),
+            battery_threshold=int(
+                options.get(CONF_BATTERY_THRESHOLD, DEFAULT_BATTERY_THRESHOLD)
+            ),
+        )
+        entry.async_on_unload(health_monitor.async_start())
+
     async def _async_scan_now(_call: ServiceCall) -> None:
         await coordinator.async_request_refresh()
 
@@ -209,7 +237,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         async_remove_panel(hass)
-        for key in (DATA_FAILURE_STORE, DATA_ANOMALY_STORE):
+        for key in (DATA_FAILURE_STORE, DATA_ANOMALY_STORE, DATA_HEALTH_STORE):
             if (review_list := hass.data.pop(key, None)) is not None:
                 await review_list.async_shutdown()
         if not hass.data[DOMAIN]:

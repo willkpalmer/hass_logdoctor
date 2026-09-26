@@ -111,6 +111,11 @@ def websocket_get(
     if (entry := _entry(hass, connection, msg["id"])) is None:
         return
     options = _current_options(entry)
+    # Settings added in later versions aren't stored on older installs yet;
+    # show their defaults, as the Configure dialog would.
+    for key in _build_schema(hass, options).schema:
+        if key not in options and key.default is not vol.UNDEFINED:
+            options[str(key)] = key.default()
     api_key_set = bool(options.pop(CONF_OPENAI_API_KEY, None))
     connection.send_result(
         msg["id"],

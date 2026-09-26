@@ -34,6 +34,7 @@ from .knowledge_base import match_known_issue
 from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
 from .anomaly_store import AnomalyStore
 from .failure_store import FailureStore
+from .health_store import HealthStore
 from .report_files import async_write_report
 from .store import LogDoctorStore
 
@@ -62,6 +63,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         store: LogDoctorStore,
         failure_store: FailureStore | None = None,
         anomaly_store: AnomalyStore | None = None,
+        health_store: HealthStore | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -76,6 +78,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.store = store
         self.failure_store = failure_store
         self.anomaly_store = anomaly_store
+        self.health_store = health_store
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -144,6 +147,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 await self.anomaly_store.async_prune(self.report_retention_days)
             except Exception:  # noqa: BLE001 - never let the review list break the scan
                 _LOGGER.exception("Could not update the Log review list")
+        if self.health_store is not None:
+            await self.health_store.async_prune(self.report_retention_days)
         if self.failure_store is not None:
             # Old automation failures go on the same retention window as
             # old reports.
