@@ -59,6 +59,19 @@ NOTIFICATION_ID_INVESTIGATION = "log_doctor_investigation_report"
 NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX = "log_doctor_automation_failure_"
 NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
 
+# hass.data key for the failure store (failure_store.py), kept apart from
+# hass.data[DOMAIN], which only holds coordinators keyed by entry ID.
+DATA_FAILURE_STORE = f"{DOMAIN}_failure_store"
+DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
+
+# The "Automation failures" sidebar panel (see panel.py / frontend/).
+PANEL_URL_PATH = "log-doctor-failures"
+PANEL_TITLE = "Automation failures"
+PANEL_ICON = "mdi:alert-circle-outline"
+PANEL_ELEMENT = "log-doctor-failures-panel"
+PANEL_STATIC_URL = "/log_doctor_static"
+PANEL_MODULE_FILE = "log-doctor-failures.js"
+
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"
 

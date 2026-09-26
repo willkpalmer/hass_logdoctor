@@ -49,6 +49,7 @@ from .const import (
     DEFAULT_SCAN_HOUR,
     DEFAULT_SCAN_MINUTE,
     DEVICE_NAME,
+    DATA_FAILURE_STORE,
     DOMAIN,
     PLATFORMS,
     SERVICE_CLEAR_HISTORY,
@@ -59,6 +60,8 @@ from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
 from .missed_schedules import MissedScheduleWatch
 from .failure_log import convert_legacy_failure_log_sync
+from .failure_store import FailureStore
+from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
 from .store import LogDoctorStore
 
@@ -94,6 +97,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except OSError:
         _LOGGER.warning("Could not convert the old automation failure log", exc_info=True)
 
+    # The automation failure list (and its Markdown file), shared by the
+    # monitors, the daily scan's pruning and the sidebar panel.
+    failure_store = FailureStore(hass)
+    await failure_store.async_load()
+    hass.data[DATA_FAILURE_STORE] = failure_store
+
     store = LogDoctorStore(hass, entry.entry_id)
     await store.async_load()
     await async_warm_known_issues(hass)
@@ -119,6 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # slice index in investigation.py, which requires an actual int.
         max_investigated=int(options.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED)),
         store=store,
+        failure_store=failure_store,
     )
 
     hass.data.setdefault(DOMAIN, {})
@@ -140,13 +150,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     notify_device_id = options.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE) or None
     if options.get(CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS):
-        monitor = AutomationFailureMonitor(hass, notify_device_id=notify_device_id)
+        monitor = AutomationFailureMonitor(
+            hass, failure_store, notify_device_id=notify_device_id
+        )
         entry.async_on_unload(monitor.async_start())
 
     if options.get(CONF_MONITOR_MISSED_SCHEDULES, DEFAULT_MONITOR_MISSED_SCHEDULES):
         watch = MissedScheduleWatch(
             hass,
             entry.entry_id,
+            failure_store=failure_store,
             notify_device_id=notify_device_id,
             min_pattern_interval=timedelta(
                 minutes=int(
@@ -171,6 +184,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_CLEAR_HISTORY):
         hass.services.async_register(DOMAIN, SERVICE_CLEAR_HISTORY, _async_clear_history)
 
+    await async_register_panel(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -186,6 +201,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        async_remove_panel(hass)
+        if (failure_store := hass.data.pop(DATA_FAILURE_STORE, None)) is not None:
+            failure_store.async_shutdown()
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, SERVICE_SCAN_NOW)
             hass.services.async_remove(DOMAIN, SERVICE_CLEAR_HISTORY)

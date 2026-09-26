@@ -28,7 +28,9 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
-from .failure_log import FailureEntry, async_record_failures
+from .const import PANEL_URL_PATH
+from .failure_log import FailureEntry
+from .failure_store import FailureStore
 from .mobile_push import resolve_mobile_app_notify_service
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,8 +89,16 @@ class _AutomationErrorHandler(logging.Handler):
 class AutomationFailureMonitor:
     """Posts a persistent notification whenever an automation run fails."""
 
-    def __init__(self, hass: HomeAssistant, notify_device_id: str | None = None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        failure_store: FailureStore | None = None,
+        notify_device_id: str | None = None,
+    ) -> None:
         self.hass = hass
+        # Every failure is also added to the failure list behind the
+        # "Automation failures" panel and its Markdown file.
+        self.failure_store = failure_store
         # A device from the Mobile App integration to also push each
         # failure to, if one was chosen in the options.
         self.notify_device_id = notify_device_id
@@ -161,18 +171,22 @@ class AutomationFailureMonitor:
         config_id = state.attributes.get("id") if state else None
         count = self._failure_counts[object_id]
 
-        await async_record_failures(
-            self.hass,
-            [
-                FailureEntry(
-                    when=self._run_triggered_at(entity_id, pending),
-                    name=name,
-                    entity_id=entity_id,
-                    reason="Failed: "
-                    + "; ".join(e.removeprefix(f"{name}: ") for e in pending.errors),
+        try:
+            if self.failure_store is not None:
+                await self.failure_store.async_add(
+                    [
+                        FailureEntry(
+                            when=self._run_triggered_at(entity_id, pending),
+                            name=name,
+                            entity_id=entity_id,
+                            config_id=config_id,
+                            reason="Failed: "
+                            + "; ".join(e.removeprefix(f"{name}: ") for e in pending.errors),
+                        )
+                    ]
                 )
-            ],
-        )
+        except Exception:  # noqa: BLE001 - the notification must still go out
+            _LOGGER.exception("Could not record the failure of %s", entity_id)
 
         lines = [
             f"**{name}** (`{entity_id}`) failed at "
@@ -191,6 +205,7 @@ class AutomationFailureMonitor:
             lines.append(f"This automation has failed {count} times since Home Assistant started.")
         if config_id:
             lines.append(f"[Open the automation's trace](/config/automation/trace/{config_id})")
+        lines.append(f"[Review all automation failures](/{PANEL_URL_PATH})")
 
         notification_id = f"{NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX}{object_id}"
         try:

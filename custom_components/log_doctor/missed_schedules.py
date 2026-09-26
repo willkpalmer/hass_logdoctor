@@ -36,7 +36,8 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, NOTIFICATION_ID_MISSED_SCHEDULES
-from .failure_log import FailureEntry, async_record_failures
+from .failure_log import FailureEntry
+from .failure_store import FailureStore
 from .mobile_push import resolve_mobile_app_notify_service
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,11 +75,15 @@ class MissedScheduleWatch:
         self,
         hass: HomeAssistant,
         entry_id: str,
+        failure_store: FailureStore | None = None,
         notify_device_id: str | None = None,
         min_pattern_interval: timedelta = timedelta(0),
     ) -> None:
         self.hass = hass
         self.notify_device_id = notify_device_id
+        # Missed runs are also added to the failure list behind the
+        # "Automation failures" panel and its Markdown file.
+        self.failure_store = failure_store
         self.min_pattern_interval = min_pattern_interval
         self._store: Store[dict[str, Any]] = Store(
             hass, _HEARTBEAT_STORAGE_VERSION, f"{DOMAIN}.{entry_id}.heartbeat"
@@ -165,14 +170,23 @@ class MissedScheduleWatch:
             return
 
         reason = f"Missed: Home Assistant was offline {_format_window(window_start, window_end)}"
-        await async_record_failures(
-            self.hass,
-            [
-                FailureEntry(when=point, name=item.name, entity_id=item.entity_id, reason=reason)
-                for item in missed
-                for point in item.times
-            ],
-        )
+        if self.failure_store is not None:
+            try:
+                await self.failure_store.async_add(
+                    [
+                        FailureEntry(
+                            when=point,
+                            name=item.name,
+                            entity_id=item.entity_id,
+                            config_id=item.config_id,
+                            reason=reason,
+                        )
+                        for item in missed
+                        for point in item.times
+                    ]
+                )
+            except Exception:  # noqa: BLE001 - the notification must still go out
+                _LOGGER.exception("Could not record missed automation runs")
         await self._async_notify(missed, window_start, window_end)
 
     async def _async_notify(

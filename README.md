@@ -62,7 +62,11 @@ report, never a change.
 7. **After every restart, it checks for scheduled automations that were
    missed while Home Assistant was offline** - see
    [Missed schedule alerts](#missed-schedule-alerts) below.
-8. **If you've configured an OpenAI API key**, the scan's report then
+8. **Both kinds of automation failure are collected on an "Automation
+   failures" page in the sidebar**, where you can sort them, mark them
+   resolved (moving them to an archive) and clear the archive - see
+   [Automation failures panel](#automation-failures-panel) below.
+9. **If you've configured an OpenAI API key**, the scan's report then
    automatically goes through the
    [investigation stage](#investigation-stage): every anomaly gets
    researched by an OpenAI model, and a **second, separate persistent
@@ -166,7 +170,9 @@ template that couldn't be rendered, invalid service data, and so on.
   removed or can't receive notifications, the persistent notification is
   still posted and a warning is logged.
 - Every failure is also added to the
-  [automation failure log](#automation-failure-log) file.
+  [Automation failures panel](#automation-failures-panel) and the
+  [automation failure log](#automation-failure-log) file; each
+  notification links to the panel.
 - Like everything else here it's report-only: the automation itself is
   never touched.
 
@@ -197,6 +203,7 @@ persistent notification ("Automations missed while Home Assistant was
 offline") listing each automation, linked to its editor, and the times it
 should have run. If a phone is chosen for pushes, it gets a short summary
 too. Each missed time is also added to the
+[Automation failures panel](#automation-failures-panel) and the
 [automation failure log](#automation-failure-log).
 
 How it works:
@@ -240,14 +247,34 @@ Limits:
   was no heartbeat yet), or when only the integration is reloaded (Home
   Assistant itself never went down).
 
+## Automation failures panel
+
+Every automation failure - failed runs and runs missed while Home Assistant
+was offline - is collected on the **Automation failures** page in Home
+Assistant's sidebar (admins only; it also works in the Companion app). Each
+failure notification links to it.
+
+- **Open** tab: every failure not yet dealt with, newest first. Click a
+  column header to sort by **Date**, **Time** (time of day, so everything
+  that fails around 03:00 sorts together), **Automation** name or
+  **Reason**; click again to reverse. Filter by text, or show only failed or
+  only missed runs. Tick one or more rows (or the header box for everything
+  shown) and **Mark resolved** to move them to the archive. The automation
+  name links to its traces.
+- **Archived** tab: resolved failures, with when they were resolved.
+  **Restore to open** moves selected ones back; **Clear archive** (after a
+  confirmation) permanently deletes every archived failure from the log.
+- New failures appear live, without refreshing. On a phone, each failure
+  shows as a card and the column names become sort buttons.
+
 ## Automation failure log
 
-Every automation failure is also recorded, one table row per failure, in
-the Markdown file `<config>/logdoctor/automation_failures.md` - Log
-Doctor's main folder, whose `reviews/` subfolder holds the
-[retained reports](#retained-reports) - so there's a lasting history after
-the notifications are dismissed. Open it in any Markdown viewer (e.g. the
-preview in the Studio Code Server add-on) and it reads as a table:
+The same list is also written to the Markdown file
+`<config>/logdoctor/automation_failures.md` - Log Doctor's main folder,
+whose `reviews/` subfolder holds the [retained reports](#retained-reports) -
+so it can be read outside Home Assistant too. It's rewritten to match the
+panel after every change (a few seconds later, so a burst of failures is
+one write), with an **Open** table and an **Archived** table:
 
 | Date | Time | Automation | Reason |
 | --- | --- | --- | --- |
@@ -255,21 +282,25 @@ preview in the Studio Code Server add-on) and it reads as a table:
 | 2026-09-26 | 06:30:00 | Morning lights (`automation.morning_lights`) | **Missed:** Home Assistant was offline from 06:28:41 to 06:31:05 |
 
 - **Failed runs** (see [Automation failure alerts](#automation-failure-alerts))
-  are logged with the time the run was *triggered* - for an automation on a
-  time schedule, its scheduled time - even if the error came later in the
+  are recorded with the time the run was *triggered* - for an automation on
+  a time schedule, its scheduled time - even if the error came later in the
   run (e.g. after a delay). The reason is **Failed:** followed by the
   error(s) from that run.
 - **Missed runs** (see [Missed schedule alerts](#missed-schedule-alerts))
-  are logged one row per missed time, with the time it was scheduled for
+  are recorded one row per missed time, with the time it was scheduled for
   and **Missed:** plus the offline window.
 - Each failure stays one row: multi-line errors are folded onto it, very
   long reasons are cut at 1,000 characters, and characters that would break
   the table (`|`) or be hidden by a viewer (`<`) are escaped.
-- Rows older than the report retention window (default 30 days) are
-  pruned after each daily scan, like old report files.
-- Before version 0.16.0 this was a plain-text `automation_failures.log`.
-  On the first start after updating it's converted into rows of the table
-  (older entries first) and the old file is removed.
+- The list itself lives in Home Assistant's storage
+  (`.storage/log_doctor.failures`); editing the Markdown file by hand has
+  no effect and is overwritten on the next change - use the panel instead.
+- Failures (open and archived) older than the report retention window
+  (default 30 days) are pruned after each daily scan, like old report
+  files. At most 10,000 are kept; beyond that the oldest are dropped.
+- Upgrading: failures already in the Markdown file from version 0.16.0, or
+  in the plain-text `automation_failures.log` from 0.14.0-0.15.x, are
+  imported into the list (as open) on the first start after updating.
 
 ## Supervisor-managed logs
 

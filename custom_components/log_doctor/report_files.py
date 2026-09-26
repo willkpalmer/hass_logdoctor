@@ -5,8 +5,8 @@ dismissed by the user).
 Reports are written under `<config>/logdoctor/reviews/` as one timestamped
 Markdown file per run, plus a `latest.md` that always mirrors the most
 recent one. Old dated files are pruned on a retention window; `latest.md`
-is never pruned. The same window prunes old lines from the automation
-failure log kept in `<config>/logdoctor/` (see failure_log.py).
+is never pruned. (The same window also prunes old automation failures -
+see failure_store.py - after each scan, in coordinator.py.)
 """
 from __future__ import annotations
 
@@ -17,15 +17,13 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 
 from .const import LATEST_REPORT_FILENAME
-from .failure_log import prune_failure_log_sync
-from .paths import failure_log_path, reviews_dir
+from .paths import reviews_dir
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _write_report_sync(
     reports_dir: Path,
-    failure_log: Path,
     report_markdown: str,
     scanned_at: datetime,
     retention_days: int,
@@ -52,11 +50,6 @@ def _write_report_sync(
                 except OSError:
                     _LOGGER.debug("Could not prune old report %s", existing)
 
-    try:
-        prune_failure_log_sync(failure_log, retention_days)
-    except OSError:
-        _LOGGER.debug("Could not prune the automation failure log")
-
     return str(report_path)
 
 
@@ -70,7 +63,6 @@ async def async_write_report(
     return await hass.async_add_executor_job(
         _write_report_sync,
         reviews_dir(hass),
-        failure_log_path(hass),
         report_markdown,
         scanned_at,
         retention_days,

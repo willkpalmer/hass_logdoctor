@@ -30,6 +30,7 @@ from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervi
 from .investigation import async_investigate_report
 from .knowledge_base import match_known_issue
 from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
+from .failure_store import FailureStore
 from .report_files import async_write_report
 from .store import LogDoctorStore
 
@@ -56,6 +57,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         openai_api_key: str | None = None,
         max_investigated: int = DEFAULT_MAX_INVESTIGATED,
         store: LogDoctorStore,
+        failure_store: FailureStore | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -68,6 +70,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.openai_api_key = openai_api_key
         self.max_investigated = max_investigated
         self.store = store
+        self.failure_store = failure_store
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -129,6 +132,10 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         result.report_file = await async_write_report(
             self.hass, result.report_markdown, now, self.report_retention_days
         )
+        if self.failure_store is not None:
+            # Old automation failures go on the same retention window as
+            # old reports.
+            await self.failure_store.async_prune(self.report_retention_days)
 
         self.store.data.last_scan = now
         self.store.prune(_SIGNATURE_RETENTION)
