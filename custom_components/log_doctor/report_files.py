@@ -5,7 +5,8 @@ dismissed by the user).
 Reports are written under `<config>/log_doctor_reports/` as one timestamped
 Markdown file per run, plus a `latest.md` that always mirrors the most
 recent one. Old dated files are pruned on a retention window; `latest.md`
-is never pruned.
+is never pruned. The same window prunes old lines from the automation
+failure log kept in that folder (see failure_log.py).
 """
 from __future__ import annotations
 
@@ -15,7 +16,8 @@ from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
-from .const import LATEST_REPORT_FILENAME, REPORTS_DIR_NAME
+from .const import FAILURE_LOG_FILENAME, LATEST_REPORT_FILENAME, REPORTS_DIR_NAME
+from .failure_log import prune_failure_log_sync
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +50,11 @@ def _write_report_sync(
                     existing.unlink()
                 except OSError:
                     _LOGGER.debug("Could not prune old report %s", existing)
+
+    try:
+        prune_failure_log_sync(reports_dir / FAILURE_LOG_FILENAME, retention_days)
+    except OSError:
+        _LOGGER.debug("Could not prune the automation failure log")
 
     return str(report_path)
 

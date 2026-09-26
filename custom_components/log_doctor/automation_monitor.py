@@ -24,9 +24,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
+from .failure_log import FailureEntry, async_record_failures
 from .mobile_push import resolve_mobile_app_notify_service
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +38,11 @@ _AUTOMATION_LOGGER = "homeassistant.components.automation"
 # How long to wait for further records from the same failed run before
 # posting the notification.
 _COALESCE_SECONDS = 2.0
+
+# Errors logged before an automation's actions start (so no
+# automation_triggered event was fired for that run); for these the failure
+# time itself is the trigger time.
+_PRE_ACTION_ERRORS = ("Error rendering variables", "Error rendering trigger variables")
 
 # Cap on distinct error lines shown in one notification, so a run that
 # spews errors (e.g. a repeat loop) can't produce a gigantic notification.
@@ -90,16 +97,32 @@ class AutomationFailureMonitor:
         # Failures per automation since this monitor started (i.e. since the
         # last Home Assistant restart or integration reload).
         self._failure_counts: dict[str, int] = {}
+        # When each automation's most recent run was triggered, from the
+        # automation_triggered event, for the failure log's time column.
+        self._triggered_at: dict[str, datetime] = {}
+        self._unsub_triggered: Callable[[], None] | None = None
 
     @callback
     def async_start(self) -> Callable[[], None]:
         """Start watching; returns a callback that stops watching."""
         logging.getLogger(_AUTOMATION_LOGGER).addHandler(self._handler)
+        self._unsub_triggered = self.hass.bus.async_listen(
+            "automation_triggered", self._async_on_triggered
+        )
         return self._async_stop
+
+    @callback
+    def _async_on_triggered(self, event: Event) -> None:
+        entity_id = event.data.get("entity_id")
+        if isinstance(entity_id, str):
+            self._triggered_at[entity_id] = event.time_fired
 
     @callback
     def _async_stop(self) -> None:
         logging.getLogger(_AUTOMATION_LOGGER).removeHandler(self._handler)
+        if self._unsub_triggered is not None:
+            self._unsub_triggered()
+            self._unsub_triggered = None
         for pending in self._pending.values():
             if pending.timer:
                 pending.timer.cancel()
@@ -115,7 +138,7 @@ class AutomationFailureMonitor:
 
         pending = self._pending.get(object_id)
         if pending is None:
-            pending = _PendingFailure(first_seen=datetime.fromtimestamp(created))
+            pending = _PendingFailure(first_seen=dt_util.utc_from_timestamp(created))
             self._pending[object_id] = pending
             pending.timer = self.hass.loop.call_later(
                 _COALESCE_SECONDS, self._async_flush, object_id
@@ -138,9 +161,22 @@ class AutomationFailureMonitor:
         config_id = state.attributes.get("id") if state else None
         count = self._failure_counts[object_id]
 
+        await async_record_failures(
+            self.hass,
+            [
+                FailureEntry(
+                    when=self._run_triggered_at(entity_id, pending),
+                    name=name,
+                    entity_id=entity_id,
+                    reason="Failed: "
+                    + "; ".join(e.removeprefix(f"{name}: ") for e in pending.errors),
+                )
+            ],
+        )
+
         lines = [
             f"**{name}** (`{entity_id}`) failed at "
-            f"{pending.first_seen.strftime('%Y-%m-%d %H:%M:%S')}.",
+            f"{dt_util.as_local(pending.first_seen).strftime('%Y-%m-%d %H:%M:%S')}.",
             "",
         ]
         for error in pending.errors[:_MAX_ERRORS_PER_NOTIFICATION]:
@@ -219,3 +255,19 @@ class AutomationFailureMonitor:
             )
         except Exception:  # noqa: BLE001 - never let a notification failure escalate
             _LOGGER.exception("Failed to send automation failure push via notify.%s", service)
+
+    def _run_triggered_at(self, entity_id: str, pending: _PendingFailure) -> datetime:
+        """When the failed run was triggered - its scheduled time, for a
+        time-scheduled automation.
+
+        That's the latest automation_triggered event for it, if it came
+        before the first error. Errors raised before the actions start
+        don't get an event at all (the latest one is from an earlier run),
+        but they happen at trigger time, so the error time is used instead.
+        """
+        if any(e.startswith(_PRE_ACTION_ERRORS) for e in pending.errors):
+            return pending.first_seen
+        triggered = self._triggered_at.get(entity_id)
+        if triggered is not None and triggered <= pending.first_seen:
+            return triggered
+        return pending.first_seen

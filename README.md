@@ -165,6 +165,8 @@ template that couldn't be rendered, invalid service data, and so on.
   which only receives the daily scan summary. If the chosen device is later
   removed or can't receive notifications, the persistent notification is
   still posted and a warning is logged.
+- Every failure is also added to the
+  [automation failure log](#automation-failure-log) file.
 - Like everything else here it's report-only: the automation itself is
   never touched.
 
@@ -194,7 +196,8 @@ on (the default), Log Doctor works out which runs were skipped and posts a
 persistent notification ("Automations missed while Home Assistant was
 offline") listing each automation, linked to its editor, and the times it
 should have run. If a phone is chosen for pushes, it gets a short summary
-too.
+too. Each missed time is also added to the
+[automation failure log](#automation-failure-log).
 
 How it works:
 
@@ -236,6 +239,33 @@ Limits:
 - Nothing is checked after the first restart following installation (there
   was no heartbeat yet), or when only the integration is reloaded (Home
   Assistant itself never went down).
+
+## Automation failure log
+
+Every automation failure is also recorded, one line per failure, in
+`<config>/log_doctor_reports/automation_failures.log` - the same folder as
+the [retained reports](#retained-reports) - so there's a lasting history
+after the notifications are dismissed:
+
+```
+# Automation failures recorded by WP Log Doctor, one per line:
+# date | time (when the run was triggered or scheduled) | automation | reason
+2026-09-26 | 03:00:00 | Nightly backup (automation.nightly_backup) | Failed: Error executing script. Service not found for call_service at pos 1: Service backup.create not found.
+2026-09-26 | 06:30:00 | Morning lights (automation.morning_lights) | Missed: Home Assistant was offline from 06:28:41 to 06:31:05
+```
+
+- **Failed runs** (see [Automation failure alerts](#automation-failure-alerts))
+  are logged with the time the run was *triggered* - for an automation on a
+  time schedule, its scheduled time - even if the error came later in the
+  run (e.g. after a delay). The reason is `Failed:` followed by the
+  error(s) from that run.
+- **Missed runs** (see [Missed schedule alerts](#missed-schedule-alerts))
+  are logged one line per missed time, with the time it was scheduled for
+  and `Missed:` plus the offline window.
+- Each entry is kept to one line: multi-line errors are folded onto it, and
+  very long reasons are cut at 1,000 characters.
+- Lines older than the report retention window (default 30 days) are
+  pruned after each daily scan, like old report files.
 
 ## Supervisor-managed logs
 

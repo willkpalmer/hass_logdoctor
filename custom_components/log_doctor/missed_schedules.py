@@ -36,6 +36,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, NOTIFICATION_ID_MISSED_SCHEDULES
+from .failure_log import FailureEntry, async_record_failures
 from .mobile_push import resolve_mobile_app_notify_service
 
 _LOGGER = logging.getLogger(__name__)
@@ -163,6 +164,15 @@ class MissedScheduleWatch:
             )
             return
 
+        reason = f"Missed: Home Assistant was offline {_format_window(window_start, window_end)}"
+        await async_record_failures(
+            self.hass,
+            [
+                FailureEntry(when=point, name=item.name, entity_id=item.entity_id, reason=reason)
+                for item in missed
+                for point in item.times
+            ],
+        )
         await self._async_notify(missed, window_start, window_end)
 
     async def _async_notify(
