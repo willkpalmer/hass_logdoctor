@@ -43,10 +43,17 @@ report, never a change.
    lines/entries were checked, and how many matched the knowledge base, so
    a clean run is evidence of a real check rather than a blank "no errors"
    message. It reaches you as:
-   - A **persistent notification** in Home Assistant (Settings bell icon),
-     rebuilt each scan - kept short on purpose: the scan summary, plus just
-     the totals of new vs. still-occurring anomalies (e.g. "New anomalies:
-     2", "Still occurring: 1"), not a write-up of every single one.
+   - The **Last scan** section of the [Settings](#settings) view in the
+     sidebar's Log Doctor page: what was checked (log file and lines read,
+     time window, other sources and their line counts) and what was found
+     (matching lines, distinct anomalies, new vs. still occurring,
+     knowledge-base matches, and the review file). Kept with the scan
+     history, so it's still there after a restart.
+   - A **persistent notification** in Home Assistant (Settings bell icon) -
+     **only when the scan finds new anomalies** - with just the totals of
+     new vs. still-occurring anomalies (e.g. "New anomalies: 2", "Still
+     occurring: 1") and a link to the Log review. A scan that finds nothing
+     new stays quiet.
    - The **full** report - every anomaly's logger, level, count, first/last
      seen, and every one of its raw matching log lines (including
      tracebacks) - written to disk as a Markdown file each run, so it
@@ -55,7 +62,7 @@ report, never a change.
      exposed in full on `sensor.log_doctor_anomalies`'s attributes for
      dashboards/automations.
    - Optionally, a short push notification via any `notify.*` mobile app
-     service.
+     service - likewise only when there's something new.
 6. **Separately from the daily scan, it watches every automation run in
    real time** and posts a persistent notification the moment one fails -
    see [Automation failure alerts](#automation-failure-alerts) below.
@@ -115,7 +122,8 @@ not something wrong with this repository; a fix is up as
    - **Minimum severity to report** — `WARNING`, `ERROR`, or `CRITICAL`.
    - **Lookback window** — how far back to look on the very first scan.
    - **Mobile notify service** — e.g. `mobile_app_pixel_10_pro_xl`, to also
-     get a push notification summary. Leave blank to skip.
+     get a push notification summary whenever a scan finds new anomalies.
+     Leave blank to skip.
    - **Report retention** — how many days of past report files to keep on
      disk before they're pruned.
    - **Check Supervisor/Host/add-on logs** — on by default; only has any
@@ -313,8 +321,10 @@ entities do, on one page (`/log-doctor#settings`):
   **Auto-investigate** switch. The key is never shown or sent to the
   browser: the page only says whether one is set. Type a new one to replace
   it, or tick **Remove key**.
-- **Scan and history** - when the last scan ran and what it found, where
-  the files are, **Scan now** (the button entity), and **Clear history**
+- **Last scan** - what the last scan checked (log file and lines read,
+  time window, each other source and its lines) and found (matching lines,
+  distinct anomalies, new vs. still occurring, knowledge-base matches, the
+  review file), where the files are, **Scan now** (the button entity), and **Clear history**
   (the `log_doctor.clear_history` service; asks you to click twice).
 
 Changed fields are marked with a dot until you **Save** (or **Discard

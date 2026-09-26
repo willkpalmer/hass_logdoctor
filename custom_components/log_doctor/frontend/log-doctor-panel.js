@@ -1009,7 +1009,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .msg.error { color: var(--error-color, #db4437); }
 .msg.ok { color: var(--success-color, #43a047); }
 .status { padding: 4px 16px 12px; display: grid; gap: 4px; }
-.status div { word-break: break-all; }
+.status div { word-break: break-word; }
+.status ul { margin: 2px 0 0; padding-left: 20px; }
 .status .k { color: var(--secondary-text-color, #727272); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--divider-color, #e0e0e0); align-items: center; }
 .actions .msg { flex: 1 1 200px; color: var(--secondary-text-color, #727272); }
@@ -1116,7 +1117,7 @@ class LogDoctorSettings extends HTMLElement {
     const card = document.createElement("div");
     card.className = "card";
     const h = document.createElement("h2");
-    h.textContent = "Scan and history";
+    h.textContent = "Last scan";
     card.appendChild(h);
     const status = document.createElement("div");
     status.className = "status";
@@ -1261,20 +1262,47 @@ class LogDoctorSettings extends HTMLElement {
     const el = this.shadowRoot.querySelector('[data-el="status"]');
     if (!el) return;
     const s = this._data.status || {};
-    const when = s.last_scan ? new Date(s.last_scan).toLocaleString() : "never";
-    const rows = [
-      ["Last scan", when],
-      ["Anomalies in the last scan", s.anomalies === undefined ? "-" : `${s.anomalies} (${s.new} new)`],
-      ["Latest review file", s.report_file || "-"],
-      ["Reviews folder", s.reviews_dir],
-      ["Automation failure log", s.failure_log],
-    ];
+    const sum = s.summary;
+    const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+    const lines = (n) => `${n} line${n === 1 ? "" : "s"}`;
+    const rows = [];
+    if (!sum) {
+      rows.push(["Last scan", s.last_scan ? fmt(s.last_scan) : "No scan yet - use Scan now, or wait for the daily scan."]);
+    } else {
+      rows.push(["Scanned", fmt(sum.scanned_at)]);
+      rows.push(["Window checked (Core log)", `${sum.since ? fmt(sum.since) : "beginning of the retained log"} → ${fmt(sum.scanned_at)}`]);
+      rows.push(["Home Assistant Core log", `${sum.log_path} (${lines(sum.lines_scanned)})`]);
+      if (sum.sources && sum.sources.length) {
+        rows.push([`Other sources checked (${sum.sources.length})`,
+          sum.sources.map((src) => `${src.name}: ${src.ok ? lines(src.lines_read) : `unavailable (${src.note || "no response"})`}`)]);
+      } else {
+        rows.push(["Other sources checked", "none (not a Home Assistant OS/Supervised install, or the check is off)"]);
+      }
+      const d = sum.anomalies;
+      rows.push(["Matching log lines", `${sum.matching_lines} across ${d} distinct anomal${d === 1 ? "y" : "ies"}`]);
+      rows.push(["Anomalies found", `${sum.new} new, ${sum.recurring} still occurring`]);
+      rows.push(["Matched to the built-in knowledge base", String(sum.known_issue_matches)]);
+      rows.push(["Review file", sum.report_file || "-"]);
+    }
+    rows.push(["Reviews folder", s.reviews_dir]);
+    rows.push(["Automation failure log", s.failure_log]);
     el.replaceChildren(...rows.map(([k, v]) => {
       const div = document.createElement("div");
       const key = document.createElement("span");
       key.className = "k";
       key.textContent = `${k}: `;
-      div.append(key, v);
+      div.appendChild(key);
+      if (Array.isArray(v)) {
+        const ul = document.createElement("ul");
+        for (const item of v) {
+          const li = document.createElement("li");
+          li.textContent = item;
+          ul.appendChild(li);
+        }
+        div.appendChild(ul);
+      } else {
+        div.append(v);
+      }
       return div;
     }));
   }
@@ -1351,7 +1379,11 @@ class LogDoctorSettings extends HTMLElement {
           const res = await this._hass.callWS({ type: SWS.SCAN_NOW });
           this._data.status = { ...this._data.status, ...res.status };
           this._renderStatus();
-          this._message("Scan finished. New anomalies are in the Log review.", "ok", "action-msg");
+          const sum = res.status.summary;
+          this._message(
+            sum ? `Scan finished: ${sum.new} new, ${sum.recurring} still occurring. See the Log review.` : "Scan finished.",
+            "ok", "action-msg",
+          );
         } catch (err) {
           this._message(`Scan failed: ${err.message || err.code || err}`, "error", "action-msg");
         } finally {

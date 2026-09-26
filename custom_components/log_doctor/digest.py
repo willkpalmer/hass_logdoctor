@@ -193,28 +193,43 @@ def build_markdown_digest(result: ScanResult) -> str:
 def build_notification_digest(result: ScanResult) -> str:
     """Short-form digest for the persistent notification.
 
-    Keeps the full "what was checked" scan summary, but shows only totals
-    for new vs. still-occurring anomalies rather than writing each one out
-    - that per-anomaly detail still lives in full in the retained report
-    file and on sensor.log_doctor_anomalies's attributes.
+    Only the anomaly counts: new vs. still occurring. The "what was
+    checked" scan summary is on the Log Doctor panel's Settings page (see
+    build_scan_summary), per-anomaly detail is in the Log review and the
+    retained report file. Only posted when a scan finds something new (see
+    coordinator.py).
     """
-    parts: list[str] = [build_summary_section(result)]
-
-    if not result.reports:
-        parts.append("### ✅ No anomalies found")
-    else:
-        parts.append(f"### 🆕 New anomalies: {len(result.new_reports)}")
-        parts.append(f"### 🔁 Still occurring: {len(result.recurring_reports)}")
-        parts.append(
-            "_Details for each one are in the full report and on "
-            "`sensor.log_doctor_anomalies`._"
-        )
-
-    parts.append(
-        "\n_Log Doctor only reports issues - it never changes your "
-        "configuration or applies fixes automatically._"
+    return "\n\n".join(
+        [
+            f"### 🆕 New anomalies: {len(result.new_reports)}",
+            f"### 🔁 Still occurring: {len(result.recurring_reports)}",
+        ]
     )
-    return "\n\n".join(parts)
+
+
+def build_scan_summary(result: ScanResult) -> dict[str, Any]:
+    """What the scan checked and found, as data for the Settings page.
+
+    The same facts as the report's "Scan summary" section
+    (build_summary_section), kept with the scan history so the page can
+    show them even after a restart, before the next scan.
+    """
+    return {
+        "scanned_at": result.scanned_at.isoformat(),
+        "since": result.since.isoformat() if result.since else None,
+        "log_path": result.log_path,
+        "lines_scanned": result.lines_scanned,
+        "sources": [
+            {"name": s.name, "lines_read": s.lines_read, "ok": s.ok, "note": s.note}
+            for s in result.sources_checked
+        ],
+        "matching_lines": result.total_occurrences,
+        "anomalies": len(result.reports),
+        "new": len(result.new_reports),
+        "recurring": len(result.recurring_reports),
+        "known_issue_matches": result.known_issue_matches,
+        "report_file": result.report_file,
+    }
 
 
 def build_mobile_summary(result: ScanResult) -> tuple[str, str]:

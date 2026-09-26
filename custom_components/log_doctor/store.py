@@ -28,6 +28,9 @@ class LogDoctorData:
     last_scan: datetime | None = None
     seen_signatures: dict[str, SeenSignature] = field(default_factory=dict)
     auto_investigate: bool = True
+    # The last scan's summary (digest.build_scan_summary), for the panel's
+    # Settings page.
+    last_summary: dict | None = None
 
 
 class LogDoctorStore:
@@ -54,6 +57,7 @@ class LogDoctorStore:
             for sig, v in raw.get("seen_signatures", {}).items()
         }
         self.data.auto_investigate = raw.get("auto_investigate", True)
+        self.data.last_summary = raw.get("last_summary")
 
     async def async_save(self) -> None:
         await self._store.async_save(
@@ -68,13 +72,18 @@ class LogDoctorStore:
                     for sig, s in self.data.seen_signatures.items()
                 },
                 "auto_investigate": self.data.auto_investigate,
+                "last_summary": self.data.last_summary,
             }
         )
 
     async def async_clear_history(self) -> None:
         # Preserve the auto-investigate switch across a history clear - it's
-        # a user preference, not scan/signature bookkeeping.
-        self.data = LogDoctorData(auto_investigate=self.data.auto_investigate)
+        # a user preference, not scan/signature bookkeeping - and the last
+        # scan's summary, which is a record of what happened.
+        self.data = LogDoctorData(
+            auto_investigate=self.data.auto_investigate,
+            last_summary=self.data.last_summary,
+        )
         await self.async_save()
 
     def mark_signature_seen(self, signature: str, when: datetime) -> bool:

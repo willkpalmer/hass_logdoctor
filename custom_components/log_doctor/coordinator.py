@@ -26,6 +26,7 @@ from .digest import (
     build_markdown_digest,
     build_mobile_summary,
     build_notification_digest,
+    build_scan_summary,
 )
 from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
 from .investigation import async_investigate_report
@@ -149,6 +150,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             await self.failure_store.async_prune(self.report_retention_days)
 
         self.store.data.last_scan = now
+        self.store.data.last_summary = build_scan_summary(result)
         self.store.prune(_SIGNATURE_RETENTION)
         await self.store.async_save()
 
@@ -173,11 +175,14 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             return []
 
     async def _async_notify(self, result: ScanResult) -> None:
+        # Only speak up when there's something new; the scan summary is on
+        # the Log Doctor panel's Settings page after every scan either way.
+        if not result.new_reports:
+            return
+
         title = f"Log Doctor Report - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
         message = build_notification_digest(result)
-        if result.report_file:
-            message += f"\n\n_Full report retained at `{result.report_file}`._"
-        if self.anomaly_store is not None and result.reports:
+        if self.anomaly_store is not None:
             message += f"\n\n[Review, archive and clear these in Log Doctor]({PANEL_LOGS_URL})"
 
         await self.hass.services.async_call(

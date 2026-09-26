@@ -91,11 +91,12 @@ def _status(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
         return status
     last_scan = coordinator.store.data.last_scan
     status["last_scan"] = last_scan.isoformat() if last_scan else None
-    result = coordinator.data
-    if result is not None:
-        status["anomalies"] = len(result.reports)
-        status["new"] = len(result.new_reports)
-        status["report_file"] = result.report_file
+    summary = coordinator.store.data.last_summary
+    status["summary"] = summary
+    if summary:
+        status["anomalies"] = summary.get("anomalies")
+        status["new"] = summary.get("new")
+        status["report_file"] = summary.get("report_file")
     status["auto_investigate"] = coordinator.store.data.auto_investigate
     status["openai_configured"] = bool(coordinator.openai_api_key)
     return status
