@@ -154,8 +154,13 @@ def websocket_update(
     device = new.pop(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE, None) or None
     if device is not None:
         new[CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE] = device
+    schema = _build_schema(hass, current)
+    # Settings removed in later versions (e.g. battery_threshold before
+    # 0.23.0) may still be stored; drop them rather than fail validation.
+    known = {str(key) for key in schema.schema}
+    new = {key: value for key, value in new.items() if key in known}
     try:
-        validated = _build_schema(hass, current)(new)
+        validated = schema(new)
     except vol.Invalid as err:
         path = " → ".join(str(p) for p in err.path) if err.path else ""
         connection.send_error(

@@ -327,14 +327,16 @@ after Home Assistant starts, once things have had time to come up):
   update entity) don't count, and devices of an integration that failed to
   load are left to that integration's entry, so one broken integration
   isn't reported as dozens of devices.
-- **Battery** - a battery below the level set in Settings (default 20%),
-  one entry per device.
 - **Integration** - an integration that failed to set up, is retrying
   setup, or failed to migrate, with the reason Home Assistant gives.
   Disabled integrations aren't checked.
 - **Repair** - an issue from Home Assistant's own **Repairs** page that
   hasn't been ignored there, with its severity and, if it has one, the
   version it breaks in.
+
+Batteries aren't checked: battery data is too inconsistent across
+integrations to report reliably. (Before 0.23.0 they were; any battery
+entries left from then are removed on upgrade.)
 
 Columns: **Type**, **Name** (with its area and integration; links to the
 device, integration or Repairs page), **Problem** and **Since**; filter by
@@ -343,8 +345,8 @@ history.
 
 These problems end by themselves, so this list keeps up with them:
 
-- When a problem clears up - the device comes back, the battery is
-  replaced, the integration loads, the repair is fixed - it moves to
+- When a problem clears up - the device comes back, the integration
+  loads, the repair is fixed - it moves to
   **Archived** automatically, marked **Cleared**.
 - **Mark resolved** on a problem that's still there archives it as
   acknowledged; it stays archived for as long as it lasts.
@@ -413,8 +415,7 @@ entities do, on one page (`/log-doctor#settings`):
 - **Automations & scripts** - failure alerts, missed-schedule alerts, and
   which time patterns to skip.
 - **Devices & integrations** - turn the checks on or off, how long a
-  device must be offline before it's reported, and the battery level to
-  report below (0 turns battery checks off).
+  device must be offline before it's reported.
 - **Notifications** - the phone to push automation failures and missed
   schedules to (picked from your Companion app devices), and the notify
   service for the daily scan summary (with suggestions).

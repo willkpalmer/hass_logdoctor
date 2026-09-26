@@ -1,4 +1,4 @@
-"""Checks devices, batteries, integrations and Repairs every few minutes.
+"""Checks devices, integrations and Repairs every few minutes.
 
 Feeds the "Devices & integrations" view of the Log Doctor panel (see
 health_store.py for how each problem is tracked). Like the rest of Log
@@ -12,8 +12,6 @@ What counts as a problem:
   reported because, say, its firmware-update entity is unavailable. Entities
   of integrations that failed to load are left to the integration check,
   so one broken integration isn't also reported as dozens of devices.
-- battery - a battery sensor (%) below the configured level, or a "battery
-  low" binary sensor that's on; one per device.
 - integration - a config entry that failed to set up, is retrying setup,
   failed to migrate or failed to unload (disabled ones aren't checked).
 - repair - an active issue in Home Assistant's Repairs that hasn't been
@@ -68,13 +66,10 @@ class HealthMonitor:
         store: HealthStore,
         *,
         offline_after: timedelta,
-        battery_threshold: int,
     ) -> None:
         self.hass = hass
         self.store = store
         self.offline_after = offline_after
-        # 0 turns battery checks off.
-        self.battery_threshold = battery_threshold
         self._unsubs: list[Callable[[], None]] = []
 
     @callback
@@ -138,7 +133,7 @@ class HealthMonitor:
             }
         return issues
 
-    # -- devices and batteries --------------------------------------------
+    # -- devices ----------------------------------------------------------
 
     def _device_issues(self) -> dict[str, dict[str, Any]]:
         ent_reg = er.async_get(self.hass)
@@ -147,7 +142,6 @@ class HealthMonitor:
         now = dt_util.utcnow()
 
         unavailable: dict[str, list[tuple[str, datetime]]] = {}
-        batteries: dict[str, list[tuple[str, float | None]]] = {}
 
         for state in self.hass.states.async_all():
             entry = ent_reg.async_get(state.entity_id)
@@ -161,12 +155,6 @@ class HealthMonitor:
                 if entry is not None and entry.entity_category is not None:
                     continue  # diagnostic/config entities alone don't count
                 unavailable.setdefault(group, []).append((state.entity_id, state.last_changed))
-                continue
-
-            if self.battery_threshold > 0:
-                level = _battery_level(state, self.battery_threshold)
-                if level is not False:
-                    batteries.setdefault(group, []).append((state.entity_id, level))
 
         issues: dict[str, dict[str, Any]] = {}
 
@@ -194,18 +182,6 @@ class HealthMonitor:
                 "entities": sorted(e for e, _ in entities)[:_MAX_ENTITIES],
             }
 
-        for group, entities in batteries.items():
-            name, sub, link, _device = self._describe(group, dev_reg, area_reg)
-            levels = [lvl for _, lvl in entities if lvl is not None]
-            detail = f"Battery {round(min(levels))}%" if levels else "Battery low"
-            issues[f"battery:{group}"] = {
-                "kind": "battery",
-                "name": name,
-                "sub": sub,
-                "detail": detail,
-                "link": link,
-                "entities": sorted(e for e, _ in entities)[:_MAX_ENTITIES],
-            }
         return issues
 
     def _describe(
@@ -276,18 +252,3 @@ class HealthMonitor:
             }
         return issues
 
-
-def _battery_level(state: Any, threshold: int) -> float | None | bool:
-    """The level if this is a low battery, None if low with no level, else False."""
-    device_class = state.attributes.get("device_class")
-    if device_class != "battery":
-        return False
-    if state.domain == "binary_sensor":
-        return None if state.state == "on" else False
-    if state.domain != "sensor" or state.attributes.get("unit_of_measurement") != "%":
-        return False
-    try:
-        level = float(state.state)
-    except (TypeError, ValueError):
-        return False
-    return level if level < threshold else False

@@ -6,16 +6,16 @@ filled by health_monitor.py. One record per problem:
     {"id", "kind", "name", "sub", "detail", "since", "link", "entities",
      "active", "resolved", "recurred", "recovered"}
 
-kind is "offline" (a device or entity unavailable), "battery" (low
-battery), "integration" (failed to load) or "repair" (a Home Assistant
-Repairs issue).
+kind is "offline" (a device or entity unavailable), "integration"
+(failed to load) or "repair" (a Home Assistant Repairs issue). Low
+battery checks were dropped in 0.23.0 (battery data is too unreliable
+across integrations); their records are removed on load.
 
 Unlike log anomalies, these are conditions that end by themselves, so each
 record tracks whether the problem is still there ("active"):
 
 - A new problem is added to the open list.
-- When a problem clears (the device comes back, the battery is replaced,
-  the integration loads, the repair is fixed or dismissed), its record is
+- When a problem clears (the device comes back, the integration loads, the repair is fixed or dismissed), its record is
   archived automatically, marked "recovered".
 - Marking a problem resolved while it's still there archives it as
   acknowledged; it stays archived for as long as the problem lasts.
@@ -39,6 +39,14 @@ class HealthStore(ReviewList):
     storage_key = "log_doctor.health"
     records_key = "issues"
     max_records = 5_000
+
+    async def async_load(self) -> dict[str, Any] | None:
+        data = await super().async_load()
+        before = len(self._records)
+        self._records = [r for r in self._records if r.get("kind") != "battery"]
+        if len(self._records) != before:
+            self.async_changed()
+        return data
 
     @staticmethod
     def sort_key(record: dict[str, Any]) -> str:

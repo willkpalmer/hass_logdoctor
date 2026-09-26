@@ -23,10 +23,8 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
-    CONF_BATTERY_THRESHOLD,
     CONF_MONITOR_HEALTH,
     CONF_OFFLINE_HOURS,
-    DEFAULT_BATTERY_THRESHOLD,
     DEFAULT_MONITOR_HEALTH,
     DEFAULT_OFFLINE_HOURS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
@@ -136,14 +134,6 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
             ): NumberSelector(
                 NumberSelectorConfig(
                     min=1, max=168, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="h"
-                )
-            ),
-            vol.Required(
-                CONF_BATTERY_THRESHOLD,
-                default=defaults.get(CONF_BATTERY_THRESHOLD, DEFAULT_BATTERY_THRESHOLD),
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=0, max=100, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="%"
                 )
             ),
             # Optional and clearable, so use a suggested value rather than a

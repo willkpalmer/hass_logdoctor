@@ -34,8 +34,6 @@ CONF_MONITOR_HEALTH = "monitor_health"
 DEFAULT_MONITOR_HEALTH = True
 CONF_OFFLINE_HOURS = "offline_hours"
 DEFAULT_OFFLINE_HOURS = 1
-CONF_BATTERY_THRESHOLD = "battery_threshold"
-DEFAULT_BATTERY_THRESHOLD = 20
 CONF_MONITOR_MISSED_SCHEDULES = "monitor_missed_schedules"
 DEFAULT_MONITOR_MISSED_SCHEDULES = True
 # Time pattern triggers repeating more often than this many minutes are left

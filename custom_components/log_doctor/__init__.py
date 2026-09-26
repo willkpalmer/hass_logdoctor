@@ -27,10 +27,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
-    CONF_BATTERY_THRESHOLD,
     CONF_MONITOR_HEALTH,
     CONF_OFFLINE_HOURS,
-    DEFAULT_BATTERY_THRESHOLD,
     DEFAULT_MONITOR_HEALTH,
     DEFAULT_OFFLINE_HOURS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
@@ -123,7 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     anomaly_store = AnomalyStore(hass)
     await anomaly_store.async_load()
     hass.data[DATA_ANOMALY_STORE] = anomaly_store
-    # Offline devices, low batteries, failed integrations and Repairs, for
+    # Offline devices, failed integrations and Repairs, for
     # the panel's Devices & integrations view.
     health_store = HealthStore(hass)
     await health_store.async_load()
@@ -220,9 +218,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             health_store,
             offline_after=timedelta(
                 hours=int(options.get(CONF_OFFLINE_HOURS, DEFAULT_OFFLINE_HOURS))
-            ),
-            battery_threshold=int(
-                options.get(CONF_BATTERY_THRESHOLD, DEFAULT_BATTERY_THRESHOLD)
             ),
         )
         entry.async_on_unload(health_monitor.async_start())

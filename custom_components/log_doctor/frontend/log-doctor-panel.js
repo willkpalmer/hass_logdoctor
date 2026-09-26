@@ -6,8 +6,8 @@
 //   #logs      Log review - the anomalies the daily scans reported
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
-//   #health    Devices & integrations - offline devices, low batteries,
-//              integrations that failed to load, and Repairs issues
+//   #health    Devices & integrations - offline devices, integrations
+//              that failed to load, and Repairs issues
 //   #backups   Backups - backup problems and successes, from Home
 //              Assistant's own backup and the GDrive Backup Utility add-on
 //              (left out of the Log review)
@@ -141,7 +141,6 @@ a:hover { text-decoration: underline; }
 .chip.recurred { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .chip.known, .chip.recovered, .chip.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
 .chip.offline, .chip.integration { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
-.chip.battery { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.repair, .chip.script, .chip.source { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .entity-list { margin: 0; padding-left: 18px; font-size: 13px; }
 .empty, .status { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #727272); }
@@ -293,7 +292,7 @@ const VIEWS = {
     list: "health",
     noun: ["entry", "entries"],
     filterPlaceholder: "Filter by name, area or problem",
-    kinds: [["", "Everything"], ["offline", "Offline devices"], ["battery", "Low batteries"], ["integration", "Integrations"], ["repair", "Repairs"]],
+    kinds: [["", "Everything"], ["offline", "Offline devices"], ["integration", "Integrations"], ["repair", "Repairs"]],
     kindOf: (r) => r.kind,
     search: (r) => `${r.name} ${r.sub} ${r.detail} ${(r.entities || []).join(" ")}`,
     defaultSort: { key: "since", dir: -1 },
@@ -357,7 +356,6 @@ const HEALTH_KINDS = {
   offline: { label: "Offline", order: 0 },
   integration: { label: "Integration", order: 1 },
   repair: { label: "Repair", order: 2 },
-  battery: { label: "Battery", order: 3 },
 };
 
 const RESOLVED_COLUMN = { key: "resolved", label: "Resolved", firstDir: -1 };
@@ -945,7 +943,7 @@ class LogDoctorPanel extends HTMLElement {
     const box = document.createElement("div");
     box.className = "detail-box";
     const h = document.createElement("h4");
-    h.textContent = r.kind === "battery" ? "Battery entities" : "Unavailable entities";
+    h.textContent = "Unavailable entities";
     box.appendChild(h);
     const ul = document.createElement("ul");
     ul.className = "entity-list";
@@ -1168,9 +1166,8 @@ const SETTINGS_SECTIONS = [
   {
     title: "Devices & integrations",
     fields: [
-      { key: "monitor_health", label: "Watch devices, batteries, integrations and Repairs", type: "bool", help: "Checked every 5 minutes." },
+      { key: "monitor_health", label: "Watch devices, integrations and Repairs", type: "bool", help: "Checked every 5 minutes." },
       { key: "offline_hours", label: "Report devices offline for at least", type: "number", min: 1, max: 168, unit: "hours" },
-      { key: "battery_threshold", label: "Report batteries below", type: "number", min: 0, max: 100, unit: "%", help: "0 turns battery checks off." },
     ],
   },
   {
