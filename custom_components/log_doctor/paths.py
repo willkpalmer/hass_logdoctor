@@ -1,7 +1,7 @@
 """Where Log Doctor keeps its files under the Home Assistant config folder.
 
     <config>/logdoctor/
-        automation_failures.log   - one line per automation failure
+        automation_failures.md    - one table row per automation failure
         reviews/                  - the scheduled scan reviews: one report
                                     per run, latest.md, and investigation
                                     findings
@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     FAILURE_LOG_FILENAME,
+    LEGACY_FAILURE_LOG_FILENAME,
     LEGACY_REPORTS_DIR_NAME,
     LOGDOCTOR_DIR_NAME,
     REVIEWS_DIR_NAME,
@@ -55,7 +56,8 @@ def migrate_legacy_folder_sync(config_dir: Path) -> None:
     reviews.mkdir(parents=True, exist_ok=True)
 
     for item in legacy.iterdir():
-        target = (main if item.name == FAILURE_LOG_FILENAME else reviews) / item.name
+        in_main = item.name in (FAILURE_LOG_FILENAME, LEGACY_FAILURE_LOG_FILENAME)
+        target = (main if in_main else reviews) / item.name
         if target.exists():
             _LOGGER.warning(
                 "Not moving %s: %s already exists; the old copy was left in place",

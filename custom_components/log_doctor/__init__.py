@@ -58,7 +58,8 @@ from .automation_monitor import AutomationFailureMonitor
 from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
 from .missed_schedules import MissedScheduleWatch
-from .paths import migrate_legacy_folder_sync
+from .failure_log import convert_legacy_failure_log_sync
+from .paths import logdoctor_dir, migrate_legacy_folder_sync
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,10 +82,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     options = {**entry.data, **entry.options}
 
-    # Pre-0.15.0 installs kept everything in log_doctor_reports/.
+    # Pre-0.15.0 installs kept everything in log_doctor_reports/, and
+    # pre-0.16.0 ones a plain-text failure log.
     await hass.async_add_executor_job(
         migrate_legacy_folder_sync, Path(hass.config.config_dir)
     )
+    try:
+        await hass.async_add_executor_job(
+            convert_legacy_failure_log_sync, logdoctor_dir(hass)
+        )
+    except OSError:
+        _LOGGER.warning("Could not convert the old automation failure log", exc_info=True)
 
     store = LogDoctorStore(hass, entry.entry_id)
     await store.async_load()
