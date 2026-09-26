@@ -17,6 +17,7 @@ from .const import (
     DOMAIN,
     NOTIFICATION_ID,
     NOTIFICATION_ID_INVESTIGATION,
+    PANEL_LOGS_URL,
 )
 from .digest import (
     AnomalyReport,
@@ -30,6 +31,7 @@ from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervi
 from .investigation import async_investigate_report
 from .knowledge_base import match_known_issue
 from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
+from .anomaly_store import AnomalyStore
 from .failure_store import FailureStore
 from .report_files import async_write_report
 from .store import LogDoctorStore
@@ -58,6 +60,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         max_investigated: int = DEFAULT_MAX_INVESTIGATED,
         store: LogDoctorStore,
         failure_store: FailureStore | None = None,
+        anomaly_store: AnomalyStore | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -71,6 +74,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.max_investigated = max_investigated
         self.store = store
         self.failure_store = failure_store
+        self.anomaly_store = anomaly_store
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -132,6 +136,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         result.report_file = await async_write_report(
             self.hass, result.report_markdown, now, self.report_retention_days
         )
+        if self.anomaly_store is not None:
+            # Feeds the Log review view of the sidebar panel.
+            try:
+                await self.anomaly_store.async_record_scan(result.reports, now)
+                await self.anomaly_store.async_prune(self.report_retention_days)
+            except Exception:  # noqa: BLE001 - never let the review list break the scan
+                _LOGGER.exception("Could not update the Log review list")
         if self.failure_store is not None:
             # Old automation failures go on the same retention window as
             # old reports.
@@ -166,6 +177,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         message = build_notification_digest(result)
         if result.report_file:
             message += f"\n\n_Full report retained at `{result.report_file}`._"
+        if self.anomaly_store is not None and result.reports:
+            message += f"\n\n[Review, archive and clear these in Log Doctor]({PANEL_LOGS_URL})"
 
         await self.hass.services.async_call(
             "persistent_notification",

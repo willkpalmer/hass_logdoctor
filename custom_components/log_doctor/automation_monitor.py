@@ -28,7 +28,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
 from .const import NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX
-from .const import PANEL_URL_PATH
+from .const import PANEL_FAILURES_URL
 from .failure_log import FailureEntry
 from .failure_store import FailureStore
 from .mobile_push import resolve_mobile_app_notify_service
@@ -205,7 +205,7 @@ class AutomationFailureMonitor:
             lines.append(f"This automation has failed {count} times since Home Assistant started.")
         if config_id:
             lines.append(f"[Open the automation's trace](/config/automation/trace/{config_id})")
-        lines.append(f"[Review all automation failures](/{PANEL_URL_PATH})")
+        lines.append(f"[Review all automation failures]({PANEL_FAILURES_URL})")
 
         notification_id = f"{NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX}{object_id}"
         try:

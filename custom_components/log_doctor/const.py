@@ -62,15 +62,24 @@ NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
 # hass.data key for the failure store (failure_store.py), kept apart from
 # hass.data[DOMAIN], which only holds coordinators keyed by entry ID.
 DATA_FAILURE_STORE = f"{DOMAIN}_failure_store"
+DATA_ANOMALY_STORE = f"{DOMAIN}_anomaly_store"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
-# The "Automation failures" sidebar panel (see panel.py / frontend/).
-PANEL_URL_PATH = "log-doctor-failures"
-PANEL_TITLE = "Automation failures"
-PANEL_ICON = "mdi:alert-circle-outline"
-PANEL_ELEMENT = "log-doctor-failures-panel"
+# The Log Doctor sidebar panel (see panel.py / frontend/), with a "Log
+# review" view and an "Automation failures" view, picked by the URL's
+# #logs / #failures.
+PANEL_URL_PATH = "log-doctor"
+PANEL_TITLE = "Log Doctor"
+PANEL_ICON = "mdi:stethoscope"
+PANEL_ELEMENT = "log-doctor-panel"
 PANEL_STATIC_URL = "/log_doctor_static"
-PANEL_MODULE_FILE = "log-doctor-failures.js"
+PANEL_MODULE_FILE = "log-doctor-panel.js"
+PANEL_LOGS_URL = f"/{PANEL_URL_PATH}#logs"
+PANEL_FAILURES_URL = f"/{PANEL_URL_PATH}#failures"
+# 0.17.0's standalone "Automation failures" panel. Still registered (hidden
+# from the sidebar) so old notification links keep working; it opens the
+# same panel on the failures view.
+LEGACY_FAILURES_PANEL_URL_PATH = "log-doctor-failures"
 
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"

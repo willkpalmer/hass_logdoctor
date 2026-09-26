@@ -1,8 +1,9 @@
-"""Registers the "Automation failures" sidebar panel.
+"""Registers the Log Doctor sidebar panel.
 
 The panel is a single self-contained web component (frontend/), served as
-a static file and added to the sidebar for admins only. It talks to Home
-Assistant through the WebSocket commands in websocket_api.py.
+a static file and added to the sidebar for admins only, with a "Log
+review" view and an "Automation failures" view. It talks to Home Assistant
+through the WebSocket commands in websocket_api.py.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from . import websocket_api
 from .const import (
     DATA_PANEL_STATIC_REGISTERED,
+    LEGACY_FAILURES_PANEL_URL_PATH,
     PANEL_ELEMENT,
     PANEL_ICON,
     PANEL_MODULE_FILE,
@@ -42,15 +44,26 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         hass.data[DATA_PANEL_STATIC_REGISTERED] = True
 
     version = await hass.async_add_executor_job(_version)
+    module_url = f"{PANEL_STATIC_URL}/{PANEL_MODULE_FILE}?v={version}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=PANEL_ELEMENT,
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
-        module_url=f"{PANEL_STATIC_URL}/{PANEL_MODULE_FILE}?v={version}",
+        module_url=module_url,
         embed_iframe=False,
         require_admin=True,
+    )
+    # No sidebar title/icon: reachable by URL only, for old links.
+    await panel_custom.async_register_panel(
+        hass,
+        frontend_url_path=LEGACY_FAILURES_PANEL_URL_PATH,
+        webcomponent_name=PANEL_ELEMENT,
+        module_url=module_url,
+        embed_iframe=False,
+        require_admin=True,
+        config={"view": "failures"},
     )
 
 
@@ -67,3 +80,4 @@ async def _async_register_static(hass: HomeAssistant) -> None:
 
 def async_remove_panel(hass: HomeAssistant) -> None:
     frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    frontend.async_remove_panel(hass, LEGACY_FAILURES_PANEL_URL_PATH)

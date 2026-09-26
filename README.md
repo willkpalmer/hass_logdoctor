@@ -62,10 +62,10 @@ report, never a change.
 7. **After every restart, it checks for scheduled automations that were
    missed while Home Assistant was offline** - see
    [Missed schedule alerts](#missed-schedule-alerts) below.
-8. **Both kinds of automation failure are collected on an "Automation
-   failures" page in the sidebar**, where you can sort them, mark them
-   resolved (moving them to an archive) and clear the archive - see
-   [Automation failures panel](#automation-failures-panel) below.
+8. **Everything it reports - log anomalies and automation failures - is
+   collected on a "Log Doctor" page in the sidebar**, where you can sort
+   and filter them, mark them resolved (moving them to an archive) and
+   clear the archive - see [Log Doctor panel](#log-doctor-panel) below.
 9. **If you've configured an OpenAI API key**, the scan's report then
    automatically goes through the
    [investigation stage](#investigation-stage): every anomaly gets
@@ -170,9 +170,9 @@ template that couldn't be rendered, invalid service data, and so on.
   removed or can't receive notifications, the persistent notification is
   still posted and a warning is logged.
 - Every failure is also added to the
-  [Automation failures panel](#automation-failures-panel) and the
+  [Log Doctor panel](#automation-failures) and the
   [automation failure log](#automation-failure-log) file; each
-  notification links to the panel.
+  notification links to it.
 - Like everything else here it's report-only: the automation itself is
   never touched.
 
@@ -203,7 +203,7 @@ persistent notification ("Automations missed while Home Assistant was
 offline") listing each automation, linked to its editor, and the times it
 should have run. If a phone is chosen for pushes, it gets a short summary
 too. Each missed time is also added to the
-[Automation failures panel](#automation-failures-panel) and the
+[Log Doctor panel](#automation-failures) and the
 [automation failure log](#automation-failure-log).
 
 How it works:
@@ -247,33 +247,61 @@ Limits:
   was no heartbeat yet), or when only the integration is reloaded (Home
   Assistant itself never went down).
 
-## Automation failures panel
+## Log Doctor panel
 
-Every automation failure - failed runs and runs missed while Home Assistant
-was offline - is collected on the **Automation failures** page in Home
-Assistant's sidebar (admins only; it also works in the Companion app). Each
-failure notification links to it.
+A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
+works in the Companion app) collects everything Log Doctor reports into two
+lists you can work through. Switch between them with the buttons at the top
+(or go straight to `/log-doctor#logs` or `/log-doctor#failures`); each shows
+how many entries are still open. The scan's notification links to the Log
+review, and each automation failure notification to the failures list.
 
-- **Open** tab: every failure not yet dealt with, newest first. Click a
-  column header to sort by **Date**, **Time** (time of day, so everything
-  that fails around 03:00 sorts together), **Automation** name or
-  **Reason**; click again to reverse. Filter by text, or show only failed or
-  only missed runs. Tick one or more rows (or the header box for everything
-  shown) and **Mark resolved** to move them to the archive. The automation
-  name links to its traces.
-- **Archived** tab: resolved failures, with when they were resolved.
+Both lists work the same way:
+
+- **Open** tab: everything not yet dealt with. Click a column header to
+  sort by it; click again to reverse. Filter by text, or with the drop-down.
+  Tick one or more rows (or the header box for everything shown) and
+  **Mark resolved** to move them to the archive.
+- **Archived** tab: resolved entries, with when they were resolved.
   **Restore to open** moves selected ones back; **Clear archive** (after a
-  confirmation) permanently deletes every archived failure from the log.
-- New failures appear live, without refreshing. On a phone, each failure
-  shows as a card and the column names become sort buttons.
+  confirmation) permanently deletes every archived entry.
+- New entries appear live, without refreshing. On a phone, each entry shows
+  as a card and the column names become sort buttons.
+
+### Log review
+
+One entry per anomaly the daily scans report - the same grouping the scan
+reports use, so repeated occurrences of one problem are a single entry
+whose **Count** keeps growing. Columns: **Level**, **Last seen**,
+**Logger**, **Message** and **Count**; filter by level. Click the ▸ next to
+a message to see when it was first and last seen, how many scans found it,
+the built-in knowledge base's explanation and suggested fix when it
+recognizes the message (marked **Known issue**), and the raw log lines
+(with tracebacks) from the latest scan that found it.
+
+If an anomaly you've marked resolved is logged again *after* you resolved
+it, the next scan moves it back to **Open**, marked **Recurred**, so a fix
+that didn't hold doesn't go unnoticed. Entries not seen within the report
+retention window (default 30 days) are pruned after each scan; at most
+5,000 are kept.
+
+The per-scan Markdown reports in `logdoctor/reviews/` are unchanged -
+they're a record of each scan, while this list is what's still open.
+
+### Automation failures
+
+Failed runs and runs missed while Home Assistant was offline. Columns:
+**Date**, **Time** (sorts by time of day, so everything that fails around
+03:00 sorts together), **Automation** (links to its traces) and
+**Reason**; filter to only failed or only missed runs.
 
 ## Automation failure log
 
-The same list is also written to the Markdown file
+The Automation failures list is also written to the Markdown file
 `<config>/logdoctor/automation_failures.md` - Log Doctor's main folder,
 whose `reviews/` subfolder holds the [retained reports](#retained-reports) -
 so it can be read outside Home Assistant too. It's rewritten to match the
-panel after every change (a few seconds later, so a burst of failures is
+Log Doctor panel after every change (a few seconds later, so a burst of failures is
 one write), with an **Open** table and an **Archived** table:
 
 | Date | Time | Automation | Reason |
@@ -294,7 +322,8 @@ one write), with an **Open** table and an **Archived** table:
   the table (`|`) or be hidden by a viewer (`<`) are escaped.
 - The list itself lives in Home Assistant's storage
   (`.storage/log_doctor.failures`); editing the Markdown file by hand has
-  no effect and is overwritten on the next change - use the panel instead.
+  no effect and is overwritten on the next change - use the Log Doctor
+  panel instead.
 - Failures (open and archived) older than the report retention window
   (default 30 days) are pruned after each daily scan, like old report
   files. At most 10,000 are kept; beyond that the oldest are dropped.
