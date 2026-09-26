@@ -1,9 +1,10 @@
 """Registers the Log Doctor sidebar panel.
 
 The panel is a single self-contained web component (frontend/), served as
-a static file and added to the sidebar for admins only, with a "Log
-review" view and an "Automation failures" view. It talks to Home Assistant
-through the WebSocket commands in websocket_api.py.
+a static file and added to the sidebar for admins only, with "Log
+review", "Automation failures", "Devices & integrations" and "Backups"
+views. It talks to Home Assistant through the WebSocket commands in
+websocket_api.py.
 """
 from __future__ import annotations
 

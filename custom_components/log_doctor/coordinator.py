@@ -17,6 +17,7 @@ from .const import (
     DOMAIN,
     NOTIFICATION_ID,
     NOTIFICATION_ID_INVESTIGATION,
+    PANEL_BACKUPS_URL,
     PANEL_LOGS_URL,
 )
 from .digest import (
@@ -31,8 +32,15 @@ from .digest import (
 from .hassio_client import async_fetch_all_logs, async_list_all_sources, supervisor_available
 from .investigation import async_investigate_report
 from .knowledge_base import match_known_issue
-from .log_parser import filter_and_group, parse_log_lines, parse_supervisor_log_text
+from .log_parser import (
+    AnomalyGroup,
+    filter_and_group,
+    parse_log_lines,
+    parse_supervisor_log_text,
+)
 from .anomaly_store import AnomalyStore
+from .backup_store import BackupStore
+from .backups import is_backup_success, is_gdrive_addon_slug, split_backup_entries
 from .failure_store import FailureStore
 from .health_store import HealthStore
 from .report_files import async_write_report
@@ -64,6 +72,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         failure_store: FailureStore | None = None,
         anomaly_store: AnomalyStore | None = None,
         health_store: HealthStore | None = None,
+        backup_store: BackupStore | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -79,6 +88,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.failure_store = failure_store
         self.anomaly_store = anomaly_store
         self.health_store = health_store
+        self.backup_store = backup_store
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -94,8 +104,15 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         since = self.store.data.last_scan or (now - timedelta(hours=self.lookback_hours))
 
         sources_checked: list[LogSourceSummary] = []
+        # Display names of the GDrive Backup Utility add-on's log source.
+        gdrive_sources: set[str] = set()
         if self.include_supervisor_logs and supervisor_available():
             sources = await async_list_all_sources(self.hass)
+            gdrive_sources = {
+                name
+                for path, name in sources
+                if path.startswith("addons/") and is_gdrive_addon_slug(path.split("/")[1])
+            }
             fetched = await async_fetch_all_logs(self.hass, sources)
             for log_path, (name, text) in fetched.items():
                 if text is None:
@@ -111,22 +128,24 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     LogSourceSummary(name=name, lines_read=len(source_lines), ok=True)
                 )
 
-        groups = filter_and_group(entries, self.min_severity, since)
+        # Backup messages go to the Backups view instead of the Log review.
+        entries, backup_entries = split_backup_entries(entries, gdrive_sources)
 
-        reports: list[AnomalyReport] = []
-        for signature, group in groups.items():
-            is_new = self.store.mark_signature_seen(signature, group.last_seen or now)
-            known_issue = match_known_issue(group.logger, group.example_message)
-            reports.append(
-                AnomalyReport(group=group, is_new=is_new, known_issue=known_issue)
+        reports = self._reports(filter_and_group(entries, self.min_severity, since), now)
+        backup_reports: list[tuple[str, AnomalyReport]] = []
+        backup_successes: list[tuple[str, AnomalyGroup]] = []
+        for source, source_entries in backup_entries.items():
+            backup_reports.extend(
+                (source, report)
+                for report in self._reports(
+                    filter_and_group(source_entries, self.min_severity, since), now
+                )
             )
-
-        # Worst-first, then most frequent.
-        severity_rank = {"CRITICAL": 3, "ERROR": 2, "WARNING": 1}
-        reports.sort(
-            key=lambda r: (severity_rank.get(r.group.level, 0), r.group.count),
-            reverse=True,
-        )
+            successes = [e for e in source_entries if is_backup_success(source, e)]
+            backup_successes.extend(
+                (source, group)
+                for group in filter_and_group(successes, "INFO", since).values()
+            )
 
         result = ScanResult(
             scanned_at=now,
@@ -135,6 +154,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             reports=reports,
             lines_scanned=len(lines),
             sources_checked=sources_checked,
+            backup_reports=[report for _source, report in backup_reports],
+            backup_successes=sum(group.count for _source, group in backup_successes),
         )
         result.report_markdown = build_markdown_digest(result)
         result.report_file = await async_write_report(
@@ -147,6 +168,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 await self.anomaly_store.async_prune(self.report_retention_days)
             except Exception:  # noqa: BLE001 - never let the review list break the scan
                 _LOGGER.exception("Could not update the Log review list")
+        if self.backup_store is not None:
+            # Feeds the Backups view of the sidebar panel.
+            try:
+                await self.backup_store.async_record_logs(backup_reports, backup_successes, now)
+                await self.backup_store.async_prune(self.report_retention_days)
+            except Exception:  # noqa: BLE001 - never let the review list break the scan
+                _LOGGER.exception("Could not update the Backups list")
         if self.health_store is not None:
             await self.health_store.async_prune(self.report_retention_days)
         if self.failure_store is not None:
@@ -171,6 +199,22 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         return result
 
+    def _reports(self, groups: dict[str, AnomalyGroup], now: datetime) -> list[AnomalyReport]:
+        """One report per group, worst-first, then most frequent."""
+        reports: list[AnomalyReport] = []
+        for signature, group in groups.items():
+            is_new = self.store.mark_signature_seen(signature, group.last_seen or now)
+            known_issue = match_known_issue(group.logger, group.example_message)
+            reports.append(
+                AnomalyReport(group=group, is_new=is_new, known_issue=known_issue)
+            )
+        severity_rank = {"CRITICAL": 3, "ERROR": 2, "WARNING": 1}
+        reports.sort(
+            key=lambda r: (severity_rank.get(r.group.level, 0), r.group.count),
+            reverse=True,
+        )
+        return reports
+
     def _read_log_lines(self) -> list[str]:
         try:
             with open(self.log_path, "r", encoding="utf-8", errors="replace") as handle:
@@ -182,13 +226,15 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
     async def _async_notify(self, result: ScanResult) -> None:
         # Only speak up when there's something new; the scan summary is on
         # the Log Doctor panel's Settings page after every scan either way.
-        if not result.new_reports:
+        if not result.new_reports and not result.new_backup_reports:
             return
 
         title = f"Log Doctor Report - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
         message = build_notification_digest(result)
-        if self.anomaly_store is not None:
+        if self.anomaly_store is not None and result.new_reports:
             message += f"\n\n[Review, archive and clear these in Log Doctor]({PANEL_LOGS_URL})"
+        if self.backup_store is not None and result.new_backup_reports:
+            message += f"\n\n[See the backup problems in Log Doctor]({PANEL_BACKUPS_URL})"
 
         await self.hass.services.async_call(
             "persistent_notification",

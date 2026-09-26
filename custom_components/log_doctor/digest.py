@@ -73,6 +73,14 @@ class ScanResult:
     report_markdown: str = ""
     report_file: str | None = None
     sources_checked: list[LogSourceSummary] = field(default_factory=list)
+    # Backup warnings/errors (see backups.py), kept apart from reports, and
+    # how many backup success lines were logged.
+    backup_reports: list[AnomalyReport] = field(default_factory=list)
+    backup_successes: int = 0
+
+    @property
+    def new_backup_reports(self) -> list[AnomalyReport]:
+        return [r for r in self.backup_reports if r.is_new]
 
     @property
     def new_reports(self) -> list[AnomalyReport]:
@@ -165,6 +173,7 @@ def build_summary_section(result: ScanResult) -> str:
     lines += [
         f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
         f"- Matched to built-in knowledge base: {result.known_issue_matches}",
+        f"- Backup problems (listed separately below): {len(result.backup_reports)}",
     ]
     return "\n".join(lines)
 
@@ -183,6 +192,11 @@ def build_markdown_digest(result: ScanResult) -> str:
             parts.append(f"### 🔁 Still occurring ({len(result.recurring_reports)})")
             parts.extend(_format_anomaly_block(r) for r in result.recurring_reports)
 
+    if result.backup_reports:
+        # Same block format, so the investigation stage covers them too.
+        parts.append(f"### 💾 Backup problems ({len(result.backup_reports)})")
+        parts.extend(_format_anomaly_block(r) for r in result.backup_reports)
+
     parts.append(
         "\n_Log Doctor only reports issues - it never changes your "
         "configuration or applies fixes automatically._"
@@ -193,18 +207,20 @@ def build_markdown_digest(result: ScanResult) -> str:
 def build_notification_digest(result: ScanResult) -> str:
     """Short-form digest for the persistent notification.
 
-    Only the anomaly counts: new vs. still occurring. The "what was
+    Only the anomaly counts: new vs. still occurring, plus new backup
+    problems when there are any. The "what was
     checked" scan summary is on the Log Doctor panel's Settings page (see
     build_scan_summary), per-anomaly detail is in the Log review and the
     retained report file. Only posted when a scan finds something new (see
     coordinator.py).
     """
-    return "\n\n".join(
-        [
-            f"### 🆕 New anomalies: {len(result.new_reports)}",
-            f"### 🔁 Still occurring: {len(result.recurring_reports)}",
-        ]
-    )
+    parts = [
+        f"### 🆕 New anomalies: {len(result.new_reports)}",
+        f"### 🔁 Still occurring: {len(result.recurring_reports)}",
+    ]
+    if result.new_backup_reports:
+        parts.append(f"### 💾 New backup problems: {len(result.new_backup_reports)}")
+    return "\n\n".join(parts)
 
 
 def build_scan_summary(result: ScanResult) -> dict[str, Any]:
@@ -228,13 +244,24 @@ def build_scan_summary(result: ScanResult) -> dict[str, Any]:
         "new": len(result.new_reports),
         "recurring": len(result.recurring_reports),
         "known_issue_matches": result.known_issue_matches,
+        "backup_problems": len(result.backup_reports),
+        "new_backup_problems": len(result.new_backup_reports),
+        "backup_successes": result.backup_successes,
         "report_file": result.report_file,
     }
 
 
 def build_mobile_summary(result: ScanResult) -> tuple[str, str]:
     """Build a short (title, message) pair suitable for a mobile push notification."""
+    backups = len(result.new_backup_reports)
+    backup_note = f" {backups} new backup problem{'' if backups == 1 else 's'}." if backups else ""
     if not result.reports:
+        if backups:
+            top = result.new_backup_reports[0]
+            return (
+                f"Log Doctor: {backups} backup problem{'' if backups == 1 else 's'}",
+                f"Top: {top.group.logger} - {top.group.example_message[:120]}",
+            )
         return (
             "Log Doctor: all clear",
             f"Checked {result.lines_scanned} log lines, nothing found.",
@@ -244,5 +271,5 @@ def build_mobile_summary(result: ScanResult) -> tuple[str, str]:
     new = len(result.new_reports)
     title = f"Log Doctor: {total} anomal{'y' if total == 1 else 'ies'} found"
     top = result.new_reports[0] if result.new_reports else result.reports[0]
-    message = f"{new} new. Top: {top.group.logger} - {top.group.example_message[:120]}"
+    message = f"{new} new.{backup_note} Top: {top.group.logger} - {top.group.example_message[:120]}"
     return (title, message)

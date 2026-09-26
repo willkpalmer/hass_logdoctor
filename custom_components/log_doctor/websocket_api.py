@@ -1,11 +1,12 @@
 """WebSocket commands for the Log Doctor sidebar panel.
 
-The panel shows two reviewable lists (see review_list.py), each picked by
+The panel shows four reviewable lists (see review_list.py), each picked by
 a "list" field:
 
 - "anomalies" - the Log review view (anomaly_store.py)
 - "failures" - the Automation failures view (failure_store.py)
 - "health" - the Devices & integrations view (health_store.py)
+- "backups" - the Backups view (backup_store.py)
 
 All commands are admin-only, like the panel itself. The panel subscribes
 once per list and gets the full list back straight away and again after
@@ -22,7 +23,12 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from . import settings_api
-from .const import DATA_ANOMALY_STORE, DATA_FAILURE_STORE, DATA_HEALTH_STORE
+from .const import (
+    DATA_ANOMALY_STORE,
+    DATA_BACKUP_STORE,
+    DATA_FAILURE_STORE,
+    DATA_HEALTH_STORE,
+)
 from .review_list import ReviewList
 
 WS_SUBSCRIBE = "log_doctor/review/subscribe"
@@ -34,6 +40,7 @@ _LISTS = {
     "anomalies": DATA_ANOMALY_STORE,
     "failures": DATA_FAILURE_STORE,
     "health": DATA_HEALTH_STORE,
+    "backups": DATA_BACKUP_STORE,
 }
 _LIST = vol.In(list(_LISTS))
 _IDS = vol.All([str], vol.Length(max=100_000))

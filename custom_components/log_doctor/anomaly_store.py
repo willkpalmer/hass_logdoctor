@@ -16,11 +16,14 @@ message (see log_parser.py) - updated after every scan:
 - Marking an anomaly resolved archives it. If a later scan finds it again
   with lines logged *after* it was resolved, it goes back to the open list
   with recurred set, so a fix that didn't hold doesn't go unnoticed.
+
+Backup messages are left out; they're on the Backups view instead (see
+backup_store.py).
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.util import dt as dt_util
 
@@ -29,6 +32,8 @@ from .review_list import ReviewList
 
 if TYPE_CHECKING:
     from .digest import AnomalyReport
+    from .knowledge_base import KnownIssue
+    from .log_parser import AnomalyGroup
 
 # Raw log lines kept per anomaly, and the most characters kept per line
 # (a line can carry a whole traceback).
@@ -65,62 +70,80 @@ class AnomalyStore(ReviewList):
         """Add or update one record per anomaly a scan reported."""
         if not reports:
             return
-        scan_iso = self._to_utc(scanned_at, scanned_at)
         by_id = {record["id"]: record for record in self._records}
         for report in reports:
-            group = report.group
-            first_seen = self._to_utc(group.first_seen, scanned_at)
-            last_seen = self._to_utc(group.last_seen, scanned_at)
-            samples = [
-                (entry.raw or entry.message)[:MAX_SAMPLE_CHARS]
-                for entry in group.entries[-MAX_SAMPLES:]
-            ]
-            known = report.known_issue
-            known_issue = (
-                {
-                    "title": known.title,
-                    "explanation": known.explanation,
-                    "fix": known.fix,
-                    "doc_url": known.doc_url,
-                }
-                if known
-                else None
-            )
-
-            record = by_id.get(group.signature)
-            if record is None:
-                record = {
-                    "id": group.signature,
-                    "level": group.level,
-                    "logger": group.logger,
-                    "message": group.example_message,
-                    "count": 0,
-                    "scans": 0,
-                    "first_seen": first_seen,
-                    "last_seen": last_seen,
-                    "resolved": None,
-                    "recurred": False,
-                }
-                self._records.append(record)
-                by_id[group.signature] = record
-
-            record["count"] += group.count
-            record["scans"] += 1
-            record["first_seen"] = min(record["first_seen"], first_seen)
-            record["last_seen"] = max(record["last_seen"], last_seen)
-            record["last_scan"] = scan_iso
-            record["message"] = group.example_message
-            record["samples"] = samples
-            record["known_issue"] = known_issue
-            if SEVERITY_ORDER.get(group.level, 0) > SEVERITY_ORDER.get(record["level"], 0):
-                record["level"] = group.level
-            if record.get("resolved") and last_seen > record["resolved"]:
-                # Logged again after it was marked resolved.
-                record["resolved"] = None
-                record["recurred"] = True
-
+            self._upsert_group(by_id, report.group, scanned_at, known_issue=report.known_issue)
         self.async_trim()
         self.async_changed()
+
+    def _upsert_group(
+        self,
+        by_id: dict[str, dict[str, Any]],
+        group: AnomalyGroup,
+        scanned_at: datetime,
+        *,
+        known_issue: KnownIssue | None = None,
+        extra: dict[str, Any] | None = None,
+        flag_recurred: bool = True,
+        append_samples: bool = False,
+    ) -> dict[str, Any]:
+        """Add or update the record for one group of log lines.
+
+        samples are replaced by the group's lines, or with append_samples
+        added to the ones already kept.
+        """
+        scan_iso = self._to_utc(scanned_at, scanned_at)
+        first_seen = self._to_utc(group.first_seen, scanned_at)
+        last_seen = self._to_utc(group.last_seen, scanned_at)
+        samples = [
+            (entry.raw or entry.message)[:MAX_SAMPLE_CHARS]
+            for entry in group.entries[-MAX_SAMPLES:]
+        ]
+
+        record = by_id.get(group.signature)
+        if record is None:
+            record = {
+                "id": group.signature,
+                "level": group.level,
+                "logger": group.logger,
+                "message": group.example_message,
+                "count": 0,
+                "scans": 0,
+                "first_seen": first_seen,
+                "last_seen": last_seen,
+                "resolved": None,
+                "recurred": False,
+            }
+            self._records.append(record)
+            by_id[group.signature] = record
+
+        record.update(extra or {})
+        record["count"] += group.count
+        record["scans"] += 1
+        record["first_seen"] = min(record["first_seen"], first_seen)
+        record["last_seen"] = max(record["last_seen"], last_seen)
+        record["last_scan"] = scan_iso
+        record["message"] = group.example_message
+        if append_samples:
+            samples = (record.get("samples", []) + samples)[-MAX_SAMPLES:]
+        record["samples"] = samples
+        record["known_issue"] = (
+            {
+                "title": known_issue.title,
+                "explanation": known_issue.explanation,
+                "fix": known_issue.fix,
+                "doc_url": known_issue.doc_url,
+            }
+            if known_issue
+            else None
+        )
+        if SEVERITY_ORDER.get(group.level, 0) > SEVERITY_ORDER.get(record["level"], 0):
+            record["level"] = group.level
+        if record.get("resolved") and last_seen > record["resolved"]:
+            # Logged again after it was marked resolved.
+            record["resolved"] = None
+            record["recurred"] = flag_recurred
+        return record
 
     async def async_resolve(self, ids: list[str]) -> int:
         count = await super().async_resolve(ids)
@@ -139,3 +162,11 @@ class AnomalyStore(ReviewList):
         self._records = [r for r in self._records if (r.get("last_seen") or "") >= cutoff]
         if len(self._records) != before:
             self.async_changed()
+
+    async def async_take(self, predicate: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
+        """Remove and return the records matching predicate."""
+        taken = [r for r in self._records if predicate(r)]
+        if taken:
+            self._records = [r for r in self._records if not predicate(r)]
+            self.async_changed()
+        return taken

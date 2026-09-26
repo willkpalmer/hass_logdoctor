@@ -69,8 +69,9 @@ report, never a change.
 7. **After every restart, it checks for scheduled automations that were
    missed while Home Assistant was offline** - see
    [Missed schedule alerts](#missed-schedule-alerts) below.
-8. **Everything it reports - log anomalies and automation failures - is
-   collected on a "Log Doctor" page in the sidebar**, where you can sort
+8. **Everything it reports - log anomalies, automation failures, device
+   and integration problems, and backups - is collected on a "Log Doctor"
+   page in the sidebar**, where you can sort
    and filter them, mark them resolved (moving them to an archive) and
    clear the archive - see [Log Doctor panel](#log-doctor-panel) below.
 9. **If you've configured an OpenAI API key**, the scan's report then
@@ -261,13 +262,15 @@ Limits:
 ## Log Doctor panel
 
 A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
-works in the Companion app) collects everything Log Doctor reports into two
+works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
-(or go straight to `/log-doctor#logs` or `/log-doctor#failures`); each shows
-how many entries are still open. The scan's notification links to the Log
-review, and each automation failure notification to the failures list.
+(or go straight to `/log-doctor#logs`, `#failures`, `#health` or
+`#backups`); each shows how many entries are still open. The scan's
+notification links to the Log review (and to Backups when it found new
+backup problems), and each automation failure notification to the failures
+list.
 
-Both lists work the same way:
+The lists work the same way:
 
 - **Open** tab: everything not yet dealt with. Click a column header to
   sort by it; click again to reverse. Filter by text, or with the drop-down.
@@ -298,6 +301,9 @@ retention window (default 30 days) are pruned after each scan; at most
 
 The per-scan Markdown reports in `logdoctor/reviews/` are unchanged -
 they're a record of each scan, while this list is what's still open.
+
+Backup warnings and errors aren't in this list - they're in
+[Backups](#backups) instead, so a failing backup is only listed once.
 
 ### Automation failures
 
@@ -351,6 +357,48 @@ Home Assistant resets every entity's "last changed" time when it restarts,
 so a device that was already offline before a restart counts from the
 restart - unless it was already on this list, which keeps its original
 **Since**. Nothing here sends notifications; it's a list to check.
+
+### Backups
+
+Everything about backups, in one place, from two sources:
+
+- **Home Assistant** - its built-in backup: the backup integration, the
+  backup platforms of integrations that store backups (Home Assistant
+  Cloud, Google Drive, OneDrive, the Supervisor's local storage, ...) and,
+  on Home Assistant OS/Supervised, the Supervisor's backup manager.
+- **GDrive Backup** - the
+  [GDrive Backup Utility](https://github.com/willkpalmer/hass_gdrive_backup)
+  add-on, recognized by its `hass_gdrive_backup` logger names, in both
+  `home-assistant.log` and the add-on's own log (the add-on's own log is
+  read through the Supervisor, so only on Home Assistant OS/Supervised
+  with **Check Supervisor/Host/add-on logs** on).
+
+Two kinds of entry:
+
+- **Problems** - every warning or error (at or above the minimum severity)
+  from either source. Each scan moves them here **instead of** the Log
+  review, and they get the same grouping, known-issue matching,
+  **Recurred** handling and retention. They're still in the scan's report
+  file (under "Backup problems", so the investigation stage looks at them
+  too), and new ones are counted in the scan's notification with a link
+  here. The add-on sends its warnings and errors to `home-assistant.log`
+  as well as its own log; a copy logged within a minute of the original
+  is only counted once. Backup problems the Log review listed before this
+  view existed are moved here on startup.
+- **Successes** - the add-on's "Backup finished" and "Uploaded ... to
+  Google Drive" lines (from its own log, found by each scan), and every
+  backup Home Assistant's backup manager completes, added the moment it
+  finishes - manual, automatic, or asked for by the add-on. A backup the
+  manager fails is added the same way as a problem ("Backup failed:
+  upload failed"). Like anomalies, successes are grouped, so each kind is
+  one entry: its **Last seen** is the latest successful backup, **Count**
+  how many there have been. Marking one resolved archives it until the
+  next success brings it back.
+
+Columns: **Status** (Success or the problem's level), **Last seen**,
+**Source** (with the logger), **Message** and **Count**; filter to
+problems, successes or one source. Click ▸ for the details and latest log
+lines.
 
 ### Settings
 
@@ -616,7 +664,7 @@ not with log size.
 
 | Entity | Description |
 | --- | --- |
-| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan. Attributes include the full anomaly list (message, count, level, known fix if matched in the built-in knowledge base, first/last seen), scan stats (lines read, knowledge-base matches), which log sources were checked and how many lines each returned (`sources_checked`), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
+| `sensor.log_doctor_anomalies` | State = number of anomalies found in the last scan, not counting backup problems (those are in `backup_problems` and the panel's [Backups](#backups) view). Attributes include the full anomaly list (message, count, level, known fix if matched in the built-in knowledge base, first/last seen), scan stats (lines read, knowledge-base matches), which log sources were checked and how many lines each returned (`sources_checked`), the full report text (`last_report`), and the path to that run's retained report file (`report_file`). |
 | `button.log_doctor_scan_now` | Triggers an immediate scan outside the daily schedule. |
 | `switch.log_doctor_auto_investigate` | On by default. Turns the automatic [investigation stage](#investigation-stage) on or off after each scan; only has any effect when an OpenAI API key is configured. State persists across restarts. |
 

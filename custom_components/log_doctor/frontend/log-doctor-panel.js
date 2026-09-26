@@ -1,13 +1,16 @@
 // WP Log Doctor - sidebar panel.
 //
 // A self-contained web component (no build step, no external libraries)
-// with four views. Three are reviewable lists with Open and Archived tabs:
+// with five views. Four are reviewable lists with Open and Archived tabs:
 //
 //   #logs      Log review - the anomalies the daily scans reported
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
 //   #health    Devices & integrations - offline devices, low batteries,
 //              integrations that failed to load, and Repairs issues
+//   #backups   Backups - backup problems and successes, from Home
+//              Assistant's own backup and the GDrive Backup Utility add-on
+//              (left out of the Log review)
 //
 // and #settings holds all of WP Log Doctor's settings (see
 // LogDoctorSettings at the end of this file).
@@ -136,10 +139,10 @@ a:hover { text-decoration: underline; }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.recurred { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
-.chip.known, .chip.recovered { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
+.chip.known, .chip.recovered, .chip.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
 .chip.offline, .chip.integration { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.battery { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
-.chip.repair, .chip.script { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
+.chip.repair, .chip.script, .chip.source { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .entity-list { margin: 0; padding-left: 18px; font-size: 13px; }
 .empty, .status { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #727272); }
 .more { padding: 12px; text-align: center; }
@@ -181,6 +184,7 @@ const TEMPLATE = `
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
     <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
+    <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
     <button class="view" data-view="settings">Settings</button>
   </div>
   <log-doctor-settings data-el="settings" hidden></log-doctor-settings>
@@ -215,7 +219,14 @@ const TEMPLATE = `
 </div>
 `;
 
-// -- the two views ------------------------------------------------------
+// -- the list views -----------------------------------------------------
+
+const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
+
+// Successes sort below every problem level.
+function backupRank(r) {
+  return r.kind === "success" ? 0 : LEVEL_RANK[r.level] || 0;
+}
 
 const VIEWS = {
   logs: {
@@ -246,6 +257,7 @@ const VIEWS = {
     },
     tiebreak: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
     expandable: true,
+    where: "the Log review",
   },
   failures: {
     list: "failures",
@@ -275,6 +287,7 @@ const VIEWS = {
     },
     tiebreak: (a, b) => a.when.localeCompare(b.when),
     expandable: false,
+    where: "the automation failure log",
   },
   health: {
     list: "health",
@@ -302,6 +315,41 @@ const VIEWS = {
     },
     tiebreak: (a, b) => (a.since || "").localeCompare(b.since || ""),
     expandable: true,
+    where: "Devices & integrations",
+  },
+  backups: {
+    list: "backups",
+    noun: ["entry", "entries"],
+    filterPlaceholder: "Filter by source, logger or message",
+    kinds: [
+      ["", "Everything"], ["problem", "Problems"], ["success", "Successes"],
+      ["ha", BACKUP_SOURCES.ha], ["gdrive", BACKUP_SOURCES.gdrive],
+    ],
+    kindOf: (r) => r.kind,
+    matches: (r, kind) => (BACKUP_SOURCES[kind] ? r.source === kind : r.kind === kind),
+    search: (r) => `${BACKUP_SOURCES[r.source] || ""} ${r.logger} ${r.message} ${r.kind === "success" ? "success" : r.level}`,
+    defaultSort: { key: "last", dir: -1 },
+    empty: {
+      open: "No backup messages yet. Backup problems and successful backups appear here.",
+      archived: "Nothing archived. Entries you mark resolved appear here.",
+    },
+    columns: [
+      { key: "status", label: "Status" },
+      { key: "last", label: "Last seen", firstDir: -1 },
+      { key: "source", label: "Source" },
+      { key: "message", label: "Message" },
+      { key: "count", label: "Count", num: true, firstDir: -1 },
+    ],
+    compare: {
+      status: (a, b) => backupRank(a) - backupRank(b),
+      last: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+      source: (a, b) => (BACKUP_SOURCES[a.source] || "").localeCompare(BACKUP_SOURCES[b.source] || ""),
+      message: (a, b) => a.message.localeCompare(b.message, undefined, { sensitivity: "base" }),
+      count: (a, b) => a.count - b.count,
+    },
+    tiebreak: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+    expandable: true,
+    where: "Backups",
   },
 };
 
@@ -632,6 +680,7 @@ class LogDoctorPanel extends HTMLElement {
       tdCheck.appendChild(cb);
       tr.appendChild(tdCheck);
       if (this._view === "logs") this._logCells(tr, r);
+      else if (this._view === "backups") this._backupCells(tr, r);
       else if (this._view === "health") this._healthCells(tr, r);
       else this._failureCells(tr, r);
       if (archived) {
@@ -647,7 +696,7 @@ class LogDoctorPanel extends HTMLElement {
       }
       frag.appendChild(tr);
       if (view.expandable && st.expanded.has(r.id)) {
-        frag.appendChild(this._view === "logs"
+        frag.appendChild(this._view === "logs" || this._view === "backups"
           ? this._logDetails(r, columns.length + 1)
           : this._healthDetails(r, columns.length + 1));
       }
@@ -717,6 +766,49 @@ class LogDoctorPanel extends HTMLElement {
     tr.appendChild(tdCount);
   }
 
+  _backupCells(tr, r) {
+    const tdStatus = this._td("", "");
+    if (r.kind === "success") tdStatus.appendChild(this._chip("success", "Success"));
+    else tdStatus.appendChild(this._chip(r.level.toLowerCase(), r.level));
+    if (r.recurred) {
+      const chip = this._chip("recurred", "Recurred");
+      chip.title = "Logged again after it was marked resolved";
+      tdStatus.appendChild(chip);
+    }
+    tr.appendChild(tdStatus);
+
+    const tdLast = this._td("", "when");
+    tdLast.append(this._label(r.kind === "success" ? "Last success " : "Last seen "), this._dateTime(r.last_seen));
+    tr.appendChild(tdLast);
+
+    const tdSource = this._td("", "logger");
+    tdSource.appendChild(document.createTextNode(BACKUP_SOURCES[r.source] || r.source || ""));
+    const sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = r.logger;
+    tdSource.appendChild(sub);
+    tr.appendChild(tdSource);
+
+    const tdMsg = this._td("", "text");
+    const expand = document.createElement("button");
+    expand.className = "expand";
+    expand.dataset.expand = r.id;
+    expand.title = "Show log lines and details";
+    expand.textContent = this._st().expanded.has(r.id) ? "▾" : "▸";
+    tdMsg.appendChild(expand);
+    if (r.known_issue) {
+      const chip = this._chip("known", "Known issue");
+      chip.title = r.known_issue.title;
+      tdMsg.appendChild(chip);
+    }
+    tdMsg.appendChild(document.createTextNode(r.message));
+    tr.appendChild(tdMsg);
+
+    const tdCount = this._td("", "num");
+    tdCount.append(this._label("Count "), String(r.count));
+    tr.appendChild(tdCount);
+  }
+
   _logDetails(r, span) {
     const tr = document.createElement("tr");
     tr.className = "details";
@@ -750,7 +842,9 @@ class LogDoctorPanel extends HTMLElement {
     const samples = r.samples || [];
     if (samples.length) {
       const h = document.createElement("h4");
-      h.textContent = `Log lines from the latest scan that found it (${samples.length})`;
+      h.textContent = this._view === "backups"
+        ? `Latest log lines (${samples.length})`
+        : `Log lines from the latest scan that found it (${samples.length})`;
       box.appendChild(h);
       const pre = document.createElement("pre");
       pre.textContent = samples.join("\n");
@@ -1010,7 +1104,7 @@ class LogDoctorPanel extends HTMLElement {
       case "ask-clear": {
         const count = st.records.filter((r) => r.resolved).length;
         const [one, many] = VIEWS[this._view].noun;
-        const where = this._view === "logs" ? "the Log review" : "the automation failure log";
+        const where = VIEWS[this._view].where;
         this._el("confirm-text").textContent =
           `Permanently delete all ${count} archived ${count === 1 ? one : many} from ${where}? This can't be undone.`;
         this._el("confirm").classList.add("open");
@@ -1060,7 +1154,7 @@ const SETTINGS_SECTIONS = [
       { key: "lookback_hours", label: "Lookback window on the first scan", type: "number", min: 1, max: 168, unit: "hours" },
       { key: "log_path", label: "Log file path", type: "text" },
       { key: "include_supervisor_logs", label: "Also check Supervisor, Host and add-on logs", help: "Home Assistant OS / Supervised only.", type: "bool" },
-      { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review and Automation failures entries are kept." },
+      { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review, Automation failures and Backups entries are kept." },
     ],
   },
   {
@@ -1420,6 +1514,12 @@ class LogDoctorSettings extends HTMLElement {
       rows.push(["Matching log lines", `${sum.matching_lines} across ${d} distinct anomal${d === 1 ? "y" : "ies"}`]);
       rows.push(["Anomalies found", `${sum.new} new, ${sum.recurring} still occurring`]);
       rows.push(["Matched to the built-in knowledge base", String(sum.known_issue_matches)]);
+      if (sum.backup_problems !== undefined) {
+        // Scans before the Backups view didn't count these.
+        rows.push(["Backups (see the Backups view)",
+          `${sum.backup_problems} problem${sum.backup_problems === 1 ? "" : "s"} (${sum.new_backup_problems} new), ` +
+          `${sum.backup_successes} success${sum.backup_successes === 1 ? "" : "es"} logged`]);
+      }
       rows.push(["Review file", sum.report_file || "-"]);
     }
     rows.push(["Reviews folder", s.reviews_dir]);

@@ -1,9 +1,12 @@
 """A reviewable list: open entries that can be resolved into an archive.
 
-Shared by the two lists on the Log Doctor sidebar panel:
+Shared by the lists on the Log Doctor sidebar panel:
 
 - failure_store.py - automation failures ("Automation failures" view)
 - anomaly_store.py - anomalies reported by the scans ("Log review" view)
+- health_store.py - device and integration problems ("Devices &
+  integrations" view)
+- backup_store.py - backup problems and successes ("Backups" view)
 
 Each is kept in Home Assistant's storage as a list of records (dicts with
 at least an "id" and a "resolved" timestamp, None while open). Marking

@@ -78,6 +78,8 @@ class LogDoctorAnomalySensor(CoordinatorEntity[LogDoctorCoordinator], SensorEnti
             ATTR_LAST_SCAN: result.scanned_at.isoformat(),
             "lines_scanned": result.lines_scanned,
             "known_issue_matches": result.known_issue_matches,
+            # Not counted in the state; see the panel's Backups view.
+            "backup_problems": len(result.backup_reports),
             ATTR_LAST_REPORT: report_text,
             ATTR_REPORT_FILE: result.report_file,
             ATTR_REPORTS_DIR: str(reviews_dir(self.coordinator.hass)),
