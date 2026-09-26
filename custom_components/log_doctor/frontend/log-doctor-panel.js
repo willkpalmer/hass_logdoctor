@@ -1267,7 +1267,10 @@ class LogDoctorSettings extends HTMLElement {
     const lines = (n) => `${n} line${n === 1 ? "" : "s"}`;
     const rows = [];
     if (!sum) {
-      rows.push(["Last scan", s.last_scan ? fmt(s.last_scan) : "No scan yet - use Scan now, or wait for the daily scan."]);
+      rows.push(["Last scan", s.last_scan
+        // Scans before 0.20.0 didn't keep a summary.
+        ? `${fmt(s.last_scan)} - full details (sources checked, lines read, what was found) appear after the next scan; use Scan now to see them straight away.`
+        : "No scan yet - use Scan now, or wait for the daily scan."]);
     } else {
       rows.push(["Scanned", fmt(sum.scanned_at)]);
       rows.push(["Window checked (Core log)", `${sum.since ? fmt(sum.since) : "beginning of the retained log"} → ${fmt(sum.scanned_at)}`]);
