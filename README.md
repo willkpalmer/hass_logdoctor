@@ -371,7 +371,9 @@ Everything about backups, in one place, from two sources:
   add-on, recognized by its `hass_gdrive_backup` logger names, in both
   `home-assistant.log` and the add-on's own log (the add-on's own log is
   read through the Supervisor, so only on Home Assistant OS/Supervised
-  with **Check Supervisor/Host/add-on logs** on).
+  with **Check Supervisor/Host/add-on logs** on). From the add-on's own
+  log, only lines in Home Assistant's log format are read, so lines from
+  add-on versions before 0.9.0 (which used another format) are ignored.
 
 Two kinds of entry:
 
@@ -498,7 +500,11 @@ A couple of things are different for these sources compared to
   words `ERROR`, `WARNING`, `CRITICAL`, or `FATAL` as whole words on those.
   It's less precise than the structured parsing - occasionally a line that
   merely mentions one of those words could be flagged - but it's the only
-  way to catch problems in logs with no fixed format.
+  way to catch problems in logs with no fixed format. The exception is the
+  [GDrive Backup Utility](#backups) add-on (slug ending `hass_gdrive_backup`,
+  or named "GDrive Backup Utility"): it always logs in the structured format
+  from v0.9.0 on, so only structured lines are read from it and anything
+  else - such as lines from older versions - is ignored.
 - Home Assistant Core's own log entry is deliberately skipped here, since
   Log Doctor already reads the complete `home-assistant.log` file directly
   (a fuller history than this endpoint's bounded tail).

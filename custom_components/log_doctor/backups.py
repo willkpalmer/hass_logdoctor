@@ -23,7 +23,6 @@ its backup manager instead (see backup_monitor.py).
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -36,6 +35,7 @@ SOURCE_GDRIVE = "gdrive"
 # from a repository, the slug gets a prefix: "<hash>_hass_gdrive_backup".
 GDRIVE_LOGGER = "hass_gdrive_backup"
 GDRIVE_SLUG = "hass_gdrive_backup"
+GDRIVE_NAME = "GDrive Backup Utility"
 
 _HA_LOGGER_RE = re.compile(
     r"^(?:homeassistant\.components\.(?:backup(?:\..+)?|[^.]+\.backup)"
@@ -56,8 +56,15 @@ _SUCCESS_RES = {
 }
 
 
-def is_gdrive_addon_slug(slug: str) -> bool:
-    return slug == GDRIVE_SLUG or slug.endswith(f"_{GDRIVE_SLUG}")
+def is_gdrive_addon(slug: str, name: str) -> bool:
+    """Whether a Supervisor add-on log source is the GDrive Backup Utility's.
+
+    Only its lines in Home Assistant's log format are read (see
+    log_parser.parse_supervisor_log_text's structured_only): versions
+    before 0.9.0 logged in another format, so their lines are dropped,
+    and every version since uses this one.
+    """
+    return slug == GDRIVE_SLUG or slug.endswith(f"_{GDRIVE_SLUG}") or name == GDRIVE_NAME
 
 
 def _split_logger(logger: str) -> str:
@@ -69,15 +76,10 @@ def _split_logger(logger: str) -> str:
     return logger.rpartition(":")[2]
 
 
-def backup_source(logger: str, gdrive_sources: Collection[str] = ()) -> str | None:
-    """SOURCE_HA or SOURCE_GDRIVE for a backup message's logger, else None.
-
-    gdrive_sources are the display names of the add-on's log source: lines
-    in its log without Home Assistant's format get the source name as their
-    logger.
-    """
+def backup_source(logger: str) -> str | None:
+    """SOURCE_HA or SOURCE_GDRIVE for a backup message's logger, else None."""
     name = _split_logger(logger)
-    if name == GDRIVE_LOGGER or name.startswith(f"{GDRIVE_LOGGER}.") or logger in gdrive_sources:
+    if name == GDRIVE_LOGGER or name.startswith(f"{GDRIVE_LOGGER}."):
         return SOURCE_GDRIVE
     if _HA_LOGGER_RE.match(name):
         return SOURCE_HA
@@ -108,7 +110,7 @@ def is_backup_success(source: str, entry: LogEntry) -> bool:
 
 
 def split_backup_entries(
-    entries: list[LogEntry], gdrive_sources: Collection[str] = ()
+    entries: list[LogEntry],
 ) -> tuple[list[LogEntry], dict[str, list[LogEntry]]]:
     """Split parsed log entries into (everything else, backup entries by source).
 
@@ -122,7 +124,7 @@ def split_backup_entries(
     forwarded: list[LogEntry] = []
     in_addon_log: dict[tuple[str, str], list[datetime]] = {}
     for entry in entries:
-        source = backup_source(entry.logger, gdrive_sources)
+        source = backup_source(entry.logger)
         if source is None:
             other.append(entry)
             continue

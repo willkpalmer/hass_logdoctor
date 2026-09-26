@@ -123,7 +123,11 @@ def parse_log_lines(lines: list[str]) -> list[LogEntry]:
 
 
 def parse_supervisor_log_text(
-    text: str, source_name: str, fallback_timestamp: datetime
+    text: str,
+    source_name: str,
+    fallback_timestamp: datetime,
+    *,
+    structured_only: bool = False,
 ) -> list[LogEntry]:
     """Parse plain-text logs fetched from the Supervisor API (Host, add-ons, etc).
 
@@ -133,6 +137,10 @@ def parse_supervisor_log_text(
     scan. Lines that don't mention a level keyword are simply not anomalies
     and are skipped - there's no traceback-folding here since these sources
     are fetched as a short, bounded tail rather than a full historical file.
+
+    With structured_only, the keyword fallback is skipped and only lines in
+    the structured format are kept (used for sources known to always log in
+    it, so lines in any other format are old or noise).
     """
     entries: list[LogEntry] = []
     for raw_line in text.splitlines():
@@ -157,6 +165,8 @@ def parse_supervisor_log_text(
             )
             continue
 
+        if structured_only:
+            continue
         keyword_match = _LEVEL_KEYWORD_RE.search(line)
         if not keyword_match:
             continue

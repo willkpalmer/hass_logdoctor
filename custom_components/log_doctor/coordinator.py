@@ -40,7 +40,7 @@ from .log_parser import (
 )
 from .anomaly_store import AnomalyStore
 from .backup_store import BackupStore
-from .backups import is_backup_success, is_gdrive_addon_slug, split_backup_entries
+from .backups import is_backup_success, is_gdrive_addon, split_backup_entries
 from .failure_store import FailureStore
 from .health_store import HealthStore
 from .report_files import async_write_report
@@ -104,14 +104,14 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         since = self.store.data.last_scan or (now - timedelta(hours=self.lookback_hours))
 
         sources_checked: list[LogSourceSummary] = []
-        # Display names of the GDrive Backup Utility add-on's log source.
-        gdrive_sources: set[str] = set()
         if self.include_supervisor_logs and supervisor_available():
             sources = await async_list_all_sources(self.hass)
-            gdrive_sources = {
-                name
+            # The GDrive Backup Utility add-on's log: only lines in Home
+            # Assistant's format, which drops lines from before its v0.9.0.
+            gdrive_paths = {
+                path
                 for path, name in sources
-                if path.startswith("addons/") and is_gdrive_addon_slug(path.split("/")[1])
+                if path.startswith("addons/") and is_gdrive_addon(path.split("/")[1], name)
             }
             fetched = await async_fetch_all_logs(self.hass, sources)
             for log_path, (name, text) in fetched.items():
@@ -122,14 +122,19 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     continue
                 source_lines = text.splitlines()
                 entries.extend(
-                    parse_supervisor_log_text(text, name, fallback_timestamp=now)
+                    parse_supervisor_log_text(
+                        text,
+                        name,
+                        fallback_timestamp=now,
+                        structured_only=log_path in gdrive_paths,
+                    )
                 )
                 sources_checked.append(
                     LogSourceSummary(name=name, lines_read=len(source_lines), ok=True)
                 )
 
         # Backup messages go to the Backups view instead of the Log review.
-        entries, backup_entries = split_backup_entries(entries, gdrive_sources)
+        entries, backup_entries = split_backup_entries(entries)
 
         reports = self._reports(filter_and_group(entries, self.min_severity, since), now)
         backup_reports: list[tuple[str, AnomalyReport]] = []
