@@ -70,11 +70,16 @@ ATTR_LAST_REPORT = "last_report"
 ATTR_REPORT_FILE = "report_file"
 ATTR_REPORTS_DIR = "reports_dir"
 
-REPORTS_DIR_NAME = "log_doctor_reports"
+# <config>/logdoctor/ holds the automation failure log; the scheduled scan
+# reviews go in its reviews/ subfolder (see paths.py).
+LOGDOCTOR_DIR_NAME = "logdoctor"
+REVIEWS_DIR_NAME = "reviews"
+# Where everything lived before 0.15.0; migrated on startup.
+LEGACY_REPORTS_DIR_NAME = "log_doctor_reports"
 LATEST_REPORT_FILENAME = "latest.md"
 LATEST_FINDINGS_FILENAME = "latest.findings.md"
 FAILURE_LOG_FILENAME = "automation_failures.log"
 # Sensor attributes are stored in the state machine and recorder; keep the
 # embedded report text bounded so a very large scan doesn't bloat either.
-# The full, untruncated report is always on disk in REPORTS_DIR_NAME.
+# The full, untruncated report is always on disk in <config>/logdoctor/reviews/.
 MAX_REPORT_ATTR_CHARS = 12000

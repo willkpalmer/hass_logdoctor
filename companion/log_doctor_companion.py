@@ -2,7 +2,7 @@
 """Log Doctor Companion.
 
 Run this separately, whenever you want, against a report the Log Doctor
-Home Assistant integration wrote to `log_doctor_reports/`. It reads that
+Home Assistant integration wrote to `logdoctor/reviews/`. It reads that
 markdown report, asks an OpenAI model to research each listed anomaly
 (with web search enabled, so it can check the Home Assistant docs, GitHub
 issues, and the Community forum), and writes a findings file alongside the
@@ -16,7 +16,7 @@ Usage:
     python log_doctor_companion.py [path/to/report.md] [-o output.md]
 
 With no path given, you'll be prompted for one (defaulting to
-`log_doctor_reports/latest.md` if it exists).
+`logdoctor/reviews/latest.md` if it exists).
 
 Requires the `openai` package and an OpenAI API key: set OPENAI_API_KEY.
 """
@@ -32,7 +32,9 @@ import openai
 from openai import OpenAI
 
 MODEL = "gpt-6-astra"
-DEFAULT_REPORT_DIR = "log_doctor_reports"
+DEFAULT_REPORT_DIR = "logdoctor/reviews"
+# Where reports lived before integration version 0.15.0.
+LEGACY_REPORT_DIR = "log_doctor_reports"
 DEFAULT_REPORT_NAME = "latest.md"
 
 _LEVEL_EMOJI = {"WARNING": "⚠️", "ERROR": "🛑", "CRITICAL": "🔴"}
@@ -121,10 +123,17 @@ def parse_report(text: str) -> list[Anomaly]:
     return anomalies
 
 
+def default_report_dir() -> Path | None:
+    for folder in (DEFAULT_REPORT_DIR, LEGACY_REPORT_DIR):
+        if Path(folder).is_dir():
+            return Path(folder)
+    return None
+
+
 def default_report_path() -> Path:
-    candidate = Path(DEFAULT_REPORT_DIR) / DEFAULT_REPORT_NAME
-    if candidate.exists():
-        return candidate
+    folder = default_report_dir()
+    if folder is not None and (folder / DEFAULT_REPORT_NAME).exists():
+        return folder / DEFAULT_REPORT_NAME
     return Path(DEFAULT_REPORT_NAME)
 
 
@@ -190,7 +199,7 @@ def main() -> None:
         "report",
         nargs="?",
         help="Path to a Log Doctor markdown report. If omitted, you'll be "
-        "prompted (default: log_doctor_reports/latest.md).",
+        "prompted (default: logdoctor/reviews/latest.md).",
     )
     parser.add_argument(
         "-o",

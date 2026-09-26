@@ -31,6 +31,7 @@ try:
     from log_doctor_companion import (
         Anomaly,
         build_findings_markdown,
+        default_report_dir,
         parse_report,
         research_anomaly,
     )
@@ -157,8 +158,7 @@ class CompanionApp(tk.Tk):
     # -- file selection -------------------------------------------------
 
     def _choose_input(self) -> None:
-        default_dir = Path("log_doctor_reports")
-        start_dir = default_dir if default_dir.exists() else Path.cwd()
+        start_dir = default_report_dir() or Path.cwd()
         chosen = filedialog.askopenfilename(
             title="Select a Log Doctor report",
             initialdir=str(start_dir),

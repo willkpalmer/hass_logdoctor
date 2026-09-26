@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -57,6 +58,7 @@ from .automation_monitor import AutomationFailureMonitor
 from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
 from .missed_schedules import MissedScheduleWatch
+from .paths import migrate_legacy_folder_sync
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,6 +80,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(entry, title=DEVICE_NAME)
 
     options = {**entry.data, **entry.options}
+
+    # Pre-0.15.0 installs kept everything in log_doctor_reports/.
+    await hass.async_add_executor_job(
+        migrate_legacy_folder_sync, Path(hass.config.config_dir)
+    )
 
     store = LogDoctorStore(hass, entry.entry_id)
     await store.async_load()

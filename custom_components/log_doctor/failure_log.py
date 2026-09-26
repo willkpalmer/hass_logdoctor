@@ -1,7 +1,8 @@
 """A running list of automation failures, one line per failure.
 
-Kept at `<config>/log_doctor_reports/automation_failures.log`, next to the
-scan reports, so it survives after the notifications are dismissed. Each
+Kept at `<config>/logdoctor/automation_failures.log` (the scan reviews are
+in its reviews/ subfolder), so it survives after the notifications are
+dismissed. Each
 line is:
 
     date | time | automation | reason
@@ -27,7 +28,7 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import FAILURE_LOG_FILENAME, REPORTS_DIR_NAME
+from .paths import failure_log_path
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,10 +51,6 @@ class FailureEntry:
     name: str
     entity_id: str
     reason: str
-
-
-def failure_log_path(hass: HomeAssistant) -> Path:
-    return Path(hass.config.path(REPORTS_DIR_NAME)) / FAILURE_LOG_FILENAME
 
 
 def _clean(text: str) -> str:

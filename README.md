@@ -243,9 +243,9 @@ Limits:
 ## Automation failure log
 
 Every automation failure is also recorded, one line per failure, in
-`<config>/log_doctor_reports/automation_failures.log` - the same folder as
-the [retained reports](#retained-reports) - so there's a lasting history
-after the notifications are dismissed:
+`<config>/logdoctor/automation_failures.log` - Log Doctor's main folder,
+whose `reviews/` subfolder holds the [retained reports](#retained-reports) -
+so there's a lasting history after the notifications are dismissed:
 
 ```
 # Automation failures recorded by WP Log Doctor, one per line:
@@ -306,7 +306,7 @@ and how many lines each returned, so you can always see what was covered.
 ## Retained reports
 
 Every scan writes its full Markdown report to
-`<config>/log_doctor_reports/` — one timestamped file per run
+`<config>/logdoctor/reviews/` — one timestamped file per run
 (`log_doctor_report_2026-09-15_080000.md`), plus a `latest.md` that always
 mirrors the most recent one. This is what survives after the persistent
 notification is dismissed or gets overwritten by tomorrow's scan: open the
@@ -316,6 +316,24 @@ was checked. Files older than the configured retention window (default 30
 days) are pruned automatically; `latest.md` is never pruned. This is also
 the file the [investigation stage](#investigation-stage) and the
 [companion app](#companion-app) both read.
+
+Log Doctor's files are laid out like this:
+
+```
+<config>/logdoctor/
+├── automation_failures.log      (see Automation failure log)
+└── reviews/
+    ├── log_doctor_report_2026-09-15_080000.md
+    ├── latest.md
+    └── latest.findings.md       (from the investigation stage)
+```
+
+Before version 0.15.0 everything was kept flat in
+`<config>/log_doctor_reports/`. On the first start after updating, those
+files are moved into the layout above automatically and the old folder is
+removed. A file is never overwritten: if one with the same name already
+exists in the new place, the old copy is left where it was (and a warning
+is logged).
 
 ## Investigation stage
 
@@ -379,9 +397,9 @@ A small window (built with Tk, part of the Python standard library - no
 extra install) with:
 
 - **Input report** — **Browse...** opens a file picker for the markdown
-  report (starts in `log_doctor_reports/` if that exists next to where
-  you ran it from). Picking a report lists its anomalies below as
-  checkboxes.
+  report (starts in `logdoctor/reviews/` if that exists next to where
+  you ran it from, or the older `log_doctor_reports/`). Picking a report
+  lists its anomalies below as checkboxes.
 - **Output file** — defaults to the input file's own folder (e.g.
   `latest.md` → `latest.findings.md`), with its own **Browse...** to save
   somewhere else instead.
@@ -401,10 +419,10 @@ python log_doctor_companion.py
 ```
 
 With no argument it prompts for a report path (defaulting to
-`log_doctor_reports/latest.md` if that exists), or pass one directly:
+`logdoctor/reviews/latest.md` if that exists), or pass one directly:
 
 ```bash
-python log_doctor_companion.py /path/to/log_doctor_reports/latest.md
+python log_doctor_companion.py /path/to/logdoctor/reviews/latest.md
 ```
 
 ### What it does

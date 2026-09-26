@@ -2,11 +2,11 @@
 persistent notification (which is overwritten every run, and can be
 dismissed by the user).
 
-Reports are written under `<config>/log_doctor_reports/` as one timestamped
+Reports are written under `<config>/logdoctor/reviews/` as one timestamped
 Markdown file per run, plus a `latest.md` that always mirrors the most
 recent one. Old dated files are pruned on a retention window; `latest.md`
 is never pruned. The same window prunes old lines from the automation
-failure log kept in that folder (see failure_log.py).
+failure log kept in `<config>/logdoctor/` (see failure_log.py).
 """
 from __future__ import annotations
 
@@ -16,18 +16,19 @@ from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
-from .const import FAILURE_LOG_FILENAME, LATEST_REPORT_FILENAME, REPORTS_DIR_NAME
+from .const import LATEST_REPORT_FILENAME
 from .failure_log import prune_failure_log_sync
+from .paths import failure_log_path, reviews_dir
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _reports_dir(hass: HomeAssistant) -> Path:
-    return Path(hass.config.path(REPORTS_DIR_NAME))
-
-
 def _write_report_sync(
-    reports_dir: Path, report_markdown: str, scanned_at: datetime, retention_days: int
+    reports_dir: Path,
+    failure_log: Path,
+    report_markdown: str,
+    scanned_at: datetime,
+    retention_days: int,
 ) -> str:
     reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -52,7 +53,7 @@ def _write_report_sync(
                     _LOGGER.debug("Could not prune old report %s", existing)
 
     try:
-        prune_failure_log_sync(reports_dir / FAILURE_LOG_FILENAME, retention_days)
+        prune_failure_log_sync(failure_log, retention_days)
     except OSError:
         _LOGGER.debug("Could not prune the automation failure log")
 
@@ -66,7 +67,11 @@ async def async_write_report(
     retention_days: int,
 ) -> str:
     """Write the report to disk (via the executor) and return its path."""
-    reports_dir = _reports_dir(hass)
     return await hass.async_add_executor_job(
-        _write_report_sync, reports_dir, report_markdown, scanned_at, retention_days
+        _write_report_sync,
+        reviews_dir(hass),
+        failure_log_path(hass),
+        report_markdown,
+        scanned_at,
+        retention_days,
     )

@@ -22,8 +22,8 @@ from .const import (
     DEVICE_NAME,
     DOMAIN,
     MAX_REPORT_ATTR_CHARS,
-    REPORTS_DIR_NAME,
 )
+from .paths import reviews_dir
 from .coordinator import LogDoctorCoordinator
 from .digest import ScanResult
 
@@ -80,7 +80,7 @@ class LogDoctorAnomalySensor(CoordinatorEntity[LogDoctorCoordinator], SensorEnti
             "known_issue_matches": result.known_issue_matches,
             ATTR_LAST_REPORT: report_text,
             ATTR_REPORT_FILE: result.report_file,
-            ATTR_REPORTS_DIR: self.coordinator.hass.config.path(REPORTS_DIR_NAME),
+            ATTR_REPORTS_DIR: str(reviews_dir(self.coordinator.hass)),
             "sources_checked": [
                 {"name": s.name, "lines_read": s.lines_read, "ok": s.ok, "note": s.note}
                 for s in result.sources_checked
