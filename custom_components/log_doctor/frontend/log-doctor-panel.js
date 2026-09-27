@@ -204,7 +204,7 @@ const TEMPLATE = `
       <input type="search" data-el="filter">
       <select data-el="kind" title="Show"></select>
       <span class="spacer"></span>
-      <button class="action secondary" data-action="copy-prompt" data-view="logs" disabled
+      <button class="action secondary" data-action="copy-prompt" data-only-view="logs" disabled
         title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
@@ -655,8 +655,8 @@ class LogDoctorPanel extends HTMLElement {
     for (const el of this.shadowRoot.querySelectorAll("[data-show]")) {
       el.hidden = el.dataset.show !== st.tab;
     }
-    for (const el of this.shadowRoot.querySelectorAll("[data-view]")) {
-      el.hidden = el.dataset.view !== this._view;
+    for (const el of this.shadowRoot.querySelectorAll("[data-only-view]")) {
+      el.hidden = el.dataset.onlyView !== this._view;
     }
 
     const rows = this._visible();
