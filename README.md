@@ -279,8 +279,20 @@ The lists work the same way:
 - **Archived** tab: resolved entries, with when they were resolved.
   **Restore to open** moves selected ones back; **Clear archive** (after a
   confirmation) permanently deletes every archived entry.
+- **Ignored** tab (Log review and Backups only): for entries that keep
+  coming back but aren't a problem, or that you can't do anything about.
+  **Ignore** moves selected open or archived entries here so they stop
+  appearing in the open list (and its count) on every scan. Scans keep
+  them up to date: the tab shows each one's **Last seen**, total
+  **Count**, when it was **Ignored** and how many times it's been logged
+  **Since ignored**, with its latest log lines under ▸. Ignored entries
+  never come back by themselves and aren't pruned; **Stop ignoring**
+  moves them back to the open list.
 - New entries appear live, without refreshing. On a phone, each entry shows
   as a card and the column names become sort buttons.
+- The view buttons, tabs, filters, buttons and column headings stay in
+  place while you scroll; only the list scrolls. On a screen too short for
+  that (a phone held sideways), the whole page scrolls instead.
 
 ### Log review
 
@@ -355,8 +367,11 @@ entries left from then are removed on upgrade.)
 Entries are grouped under a heading for the integration they belong to
 (for example "Philips Hue", with how many entries it has), so one
 integration's problems appear together; sorting applies within each group.
-Entries that don't belong to an integration are grouped under "Other", at
-the end.
+Home Assistant's own parts - automations, scripts, scenes, helpers,
+templates, groups and the like (built-in integrations of type system,
+helper or entity) - come first, then the integrations for your devices and
+services, each alphabetically. Entries that don't belong to an integration
+are grouped under "Other", at the end.
 
 Click an integration's heading to collapse it (▸) or expand it again (▾);
 **Collapse all** / **Expand all** does every integration at once. Which

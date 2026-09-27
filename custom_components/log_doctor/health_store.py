@@ -33,7 +33,7 @@ from homeassistant.util import dt as dt_util
 from .review_list import ReviewList
 
 # Fields refreshed from every check.
-_DISPLAY_FIELDS = ("name", "sub", "detail", "link", "entities", "kind", "integration", "integration_name")
+_DISPLAY_FIELDS = ("name", "sub", "detail", "link", "entities", "kind", "integration", "integration_name", "integration_core")
 
 
 class HealthStore(ReviewList):

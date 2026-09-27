@@ -65,6 +65,22 @@ _BAD_ENTRY_STATES = {
 }
 
 
+# Integration types that are part of Home Assistant itself rather than a
+# connection to a device or service: system (automation, script, person,
+# zone, ...), helper (input_boolean, template, group, timer, ...) and
+# entity (scene, light, ...). Quality scale "internal" isn't used: it also
+# covers integrations like Mobile App.
+_CORE_TYPES = {"system", "helper", "entity"}
+
+
+def _is_core(integration: Any) -> bool:
+    """Whether an integration is one of Home Assistant's own parts."""
+    return (
+        bool(getattr(integration, "is_built_in", False))
+        and getattr(integration, "integration_type", None) in _CORE_TYPES
+    )
+
+
 class HealthMonitor:
     def __init__(
         self,
@@ -254,9 +270,15 @@ class HealthMonitor:
         return entity.platform if entity is not None else None
 
     async def _name_integrations(self, issues: dict[str, dict[str, Any]]) -> None:
-        """Adds each issue's integration display name (e.g. "Philips Hue"), used to group the list."""
+        """Adds each issue's integration display name (e.g. "Philips Hue"), used to group the list.
+
+        Also marks Home Assistant's own parts - automations, scripts,
+        helpers, templates and the like - as integration_core, so the panel
+        can list them before the integrations of actual devices and services.
+        """
         domains = {issue["integration"] for issue in issues.values() if issue.get("integration")}
         names: dict[str, str] = {}
+        core: set[str] = set()
         if domains:
             try:
                 found = await async_get_integrations(self.hass, domains)
@@ -264,10 +286,16 @@ class HealthMonitor:
                 found = {}
             for domain in domains:
                 integration = found.get(domain)
-                names[domain] = integration.name if integration is not None and not isinstance(integration, Exception) else domain
+                if integration is None or isinstance(integration, Exception):
+                    names[domain] = domain
+                    continue
+                names[domain] = integration.name
+                if _is_core(integration):
+                    core.add(domain)
         for issue in issues.values():
             domain = issue.get("integration")
             issue["integration_name"] = names.get(domain) if domain else None
+            issue["integration_core"] = domain in core
 
     # -- repairs ----------------------------------------------------------
 

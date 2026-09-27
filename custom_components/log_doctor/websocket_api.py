@@ -8,6 +8,10 @@ a "list" field:
 - "health" - the Devices & integrations view (health_store.py)
 - "backups" - the Backups view (backup_store.py)
 
+log_doctor/review/ignore and log_doctor/review/unignore move entries of the
+lists that support it ("anomalies" and "backups") to and from their
+Ignored tab.
+
 log_doctor/review/investigation_prompt builds, for selected Log review
 entries, the prompt the investigation stage would send (see
 investigation.py), for the panel to copy to the clipboard.
@@ -41,6 +45,8 @@ WS_RESOLVE = "log_doctor/review/resolve"
 WS_RESTORE = "log_doctor/review/restore"
 WS_CLEAR_ARCHIVED = "log_doctor/review/clear_archived"
 WS_INVESTIGATION_PROMPT = "log_doctor/review/investigation_prompt"
+WS_IGNORE = "log_doctor/review/ignore"
+WS_UNIGNORE = "log_doctor/review/unignore"
 
 _LISTS = {
     "anomalies": DATA_ANOMALY_STORE,
@@ -60,6 +66,8 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_restore)
     websocket_api.async_register_command(hass, websocket_clear_archived)
     websocket_api.async_register_command(hass, websocket_investigation_prompt)
+    websocket_api.async_register_command(hass, websocket_ignore)
+    websocket_api.async_register_command(hass, websocket_unignore)
 
 
 def _get_list(
@@ -121,6 +129,40 @@ async def websocket_restore(
     if (review_list := _get_list(hass, connection, msg)) is None:
         return
     connection.send_result(msg["id"], {"count": await review_list.async_restore(msg["ids"])})
+
+
+async def _async_ignore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any], method: str
+) -> None:
+    if (review_list := _get_list(hass, connection, msg)) is None:
+        return
+    handler = getattr(review_list, method, None)
+    if handler is None:
+        connection.send_error(msg["id"], "not_supported", "Entries of this list can't be ignored")
+        return
+    connection.send_result(msg["id"], {"count": await handler(msg["ids"])})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_IGNORE, vol.Required("list"): _LIST, vol.Required("ids"): _IDS}
+)
+@websocket_api.async_response
+async def websocket_ignore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    await _async_ignore(hass, connection, msg, "async_ignore")
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_UNIGNORE, vol.Required("list"): _LIST, vol.Required("ids"): _IDS}
+)
+@websocket_api.async_response
+async def websocket_unignore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    await _async_ignore(hass, connection, msg, "async_unignore")
 
 
 @websocket_api.require_admin

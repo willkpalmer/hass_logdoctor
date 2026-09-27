@@ -20,13 +20,21 @@
 // comes back in full after every change, so new entries appear live.
 // Open entries can be sorted, filtered, selected and marked resolved,
 // which moves them to Archived; archived ones can be restored, or the
-// archive cleared, which deletes them for good.
+// archive cleared, which deletes them for good. Log review and Backups
+// entries can also be ignored, which moves them to a third tab, Ignored,
+// where scans keep them up to date without bringing them back.
+//
+// The page itself doesn't scroll: the view buttons, tabs, toolbar and
+// column headings stay put and only the list scrolls (unless the window is
+// too short for that, e.g. a phone held sideways).
 
 const WS = {
   SUBSCRIBE: "log_doctor/review/subscribe",
   RESOLVE: "log_doctor/review/resolve",
   RESTORE: "log_doctor/review/restore",
   CLEAR_ARCHIVED: "log_doctor/review/clear_archived",
+  IGNORE: "log_doctor/review/ignore",
+  UNIGNORE: "log_doctor/review/unignore",
   INVESTIGATION_PROMPT: "log_doctor/review/investigation_prompt",
 };
 
@@ -37,8 +45,10 @@ const LEVEL_RANK = { WARNING: 1, ERROR: 2, CRITICAL: 3 };
 
 const STYLE = `
 :host {
-  display: block;
-  min-height: 100vh;
+  /* Fills the window; only the list scrolls, so everything above it and
+     the column headings stay in view. */
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
   background: var(--primary-background-color, #fafafa);
   color: var(--primary-text-color, #212121);
   font-family: var(--paper-font-body1_-_font-family, var(--ha-font-family-body, Roboto, sans-serif));
@@ -50,13 +60,17 @@ const STYLE = `
   height: var(--header-height, 56px); padding: 0 16px;
   background: var(--app-header-background-color, var(--primary-color, #03a9f4));
   color: var(--app-header-text-color, #fff);
-  position: sticky; top: 0; z-index: 2;
+  flex: none;
 }
 .header h1 { font-size: 20px; font-weight: 400; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-btn { display: none; background: none; border: 0; color: inherit; font-size: 22px; cursor: pointer; padding: 4px 8px; }
 :host([narrow]) .menu-btn { display: inline-block; }
-.content { padding: 16px; max-width: 1400px; margin: 0 auto; }
-.views { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.content {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  width: 100%; max-width: 1400px; margin: 0 auto; padding: 16px;
+}
+.views { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; flex: none; }
+log-doctor-settings { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .view {
   font: inherit; font-weight: 500; padding: 8px 16px; border-radius: 18px; cursor: pointer;
   border: 1px solid var(--divider-color, #e0e0e0);
@@ -69,7 +83,10 @@ const STYLE = `
   border-radius: var(--ha-card-border-radius, 12px);
   border: 1px solid var(--divider-color, #e0e0e0);
   overflow: hidden;
+  flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
 }
+.card[hidden] { display: none; }
+.card > .tabs, .card > .toolbar, .card > .confirm, .card > .footer { flex: none; }
 .tabs { display: flex; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
 .tab {
   flex: 0 0 auto; padding: 12px 20px; background: none; border: 0;
@@ -100,8 +117,13 @@ button.action:disabled { opacity: 0.4; cursor: default; }
 }
 .confirm.open { display: flex; }
 .confirm span { flex: 1 1 240px; }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
+.table-wrap { flex: 0 1 auto; min-height: 0; overflow: auto; }
+thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--card-background-color, #fff);
+  box-shadow: inset 0 -1px 0 var(--divider-color, #e0e0e0);
+}
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
 th, td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--divider-color, #e0e0e0); vertical-align: top; }
 th { font-weight: 500; color: var(--secondary-text-color, #727272); white-space: nowrap; user-select: none; }
 th.sortable { cursor: pointer; }
@@ -160,13 +182,16 @@ a:hover { text-decoration: underline; }
 /* Phones: one card per entry; the column headers become sort buttons. */
 @media (max-width: 700px) {
   .content { padding: 8px; }
-  .table-wrap { overflow: visible; }
   table, thead, tbody { display: block; }
   thead tr {
     display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px;
     padding: 6px 12px; border-top: 1px solid var(--divider-color, #e0e0e0);
   }
-  thead th { border: 0; padding: 6px 2px; }
+  thead {
+    position: sticky; top: 0; z-index: 1; background: var(--card-background-color, #fff);
+    box-shadow: inset 0 -1px 0 var(--divider-color, #e0e0e0);
+  }
+  thead th { border: 0; padding: 6px 2px; position: static; box-shadow: none; }
   th.num { text-align: left; }
   tbody tr.row {
     display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; row-gap: 3px;
@@ -180,6 +205,15 @@ a:hover { text-decoration: underline; }
   tr.details td { display: block; padding: 0; }
   .detail-box { margin-left: 40px; }
   .label { display: inline; }
+}
+
+/* Too short for a fixed top part (e.g. a phone held sideways): the whole
+   page scrolls instead. */
+@media (max-height: 520px) {
+  :host { height: auto; min-height: 100vh; display: block; }
+  .content, .card { display: block; }
+  .table-wrap { overflow: visible; overflow-x: auto; }
+  thead, thead th { position: static; }
 }
 `;
 
@@ -201,6 +235,7 @@ const TEMPLATE = `
     <div class="tabs">
       <button class="tab" data-tab="open">Open</button>
       <button class="tab" data-tab="archived">Archived</button>
+      <button class="tab" data-tab="ignored" data-ignorable>Ignored</button>
     </div>
     <div class="toolbar">
       <input type="search" data-el="filter">
@@ -210,6 +245,10 @@ const TEMPLATE = `
         title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
       <button class="action secondary" data-action="toggle-groups" data-only-view="health"
         title="Collapse or expand every integration">Collapse all</button>
+      <button class="action secondary" data-action="ignore" data-show="open archived" data-ignorable disabled
+        title="Stop showing these here; they keep being tracked on the Ignored tab">Ignore</button>
+      <button class="action secondary" data-action="unignore" data-show="ignored" disabled
+        title="Move these back to the open list">Stop ignoring</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
       <button class="action danger secondary" data-action="ask-clear" data-show="archived" disabled>Clear archive</button>
@@ -219,14 +258,14 @@ const TEMPLATE = `
       <button class="action secondary" data-action="cancel-clear">Cancel</button>
       <button class="action danger" data-action="clear">Delete permanently</button>
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap" data-el="scroll">
       <table>
         <thead><tr data-el="head"></tr></thead>
         <tbody data-el="body"></tbody>
       </table>
+      <div class="status" data-el="status">Loading…</div>
+      <div class="more" data-el="more" hidden><button class="action secondary" data-action="more">Show more</button></div>
     </div>
-    <div class="status" data-el="status">Loading…</div>
-    <div class="more" data-el="more" hidden><button class="action secondary" data-action="more">Show more</button></div>
     <div class="footer" data-el="footer"></div>
   </div>
 </div>
@@ -257,7 +296,9 @@ const VIEWS = {
     empty: {
       open: "Nothing to review. Anomalies from each scan appear here. 🎉",
       archived: "Nothing archived. Entries you mark resolved appear here.",
+      ignored: "Nothing ignored. Entries you ignore appear here, still updated by each scan.",
     },
+    ignorable: true,
     columns: [
       { key: "level", label: "Level" },
       { key: "last", label: "Last seen", firstDir: -1 },
@@ -315,6 +356,8 @@ const VIEWS = {
     search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")}`,
     // Rows are shown under a heading for their integration
     groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,
+    // Home Assistant's own parts (automations, scripts, helpers, ...) first.
+    groupRank: (r) => (r.integration_core ? 0 : 1),
     defaultSort: { key: "since", dir: -1 },
     empty: {
       open: "No device or integration problems. 🎉",
@@ -351,7 +394,9 @@ const VIEWS = {
     empty: {
       open: "No backup messages yet. Backup problems and successful backups appear here.",
       archived: "Nothing archived. Entries you mark resolved appear here.",
+      ignored: "Nothing ignored. Entries you ignore appear here, still updated as backups run.",
     },
+    ignorable: true,
     columns: [
       { key: "status", label: "Status" },
       { key: "last", label: "Last seen", firstDir: -1 },
@@ -380,6 +425,16 @@ const HEALTH_KINDS = {
 };
 
 const RESOLVED_COLUMN = { key: "resolved", label: "Resolved", firstDir: -1 };
+const IGNORED_COLUMNS = [
+  { key: "ignored", label: "Ignored", firstDir: -1 },
+  { key: "ignored_count", label: "Since ignored", num: true, firstDir: -1 },
+];
+
+// Which tab an entry is on.
+function tabOf(r) {
+  if (r.ignored) return "ignored";
+  return r.resolved ? "archived" : "open";
+}
 
 class LogDoctorPanel extends HTMLElement {
   constructor() {
@@ -473,6 +528,7 @@ class LogDoctorPanel extends HTMLElement {
     this._view = view;
     history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}#${view}`);
     this._el("confirm").classList.remove("open");
+    this._el("scroll").scrollTop = 0;
     this._syncControls();
     this._render();
   }
@@ -620,12 +676,17 @@ class LogDoctorPanel extends HTMLElement {
 
   _columns() {
     const cols = VIEWS[this._view].columns;
-    return this._st().tab === "archived" ? [...cols, RESOLVED_COLUMN] : cols;
+    const tab = this._st().tab;
+    if (tab === "archived") return [...cols, RESOLVED_COLUMN];
+    if (tab === "ignored") return [...cols, ...IGNORED_COLUMNS];
+    return cols;
   }
 
   _compare(key) {
     const view = VIEWS[this._view];
     if (key === "resolved") return (a, b) => (a.resolved || "").localeCompare(b.resolved || "");
+    if (key === "ignored") return (a, b) => (a.ignored || "").localeCompare(b.ignored || "");
+    if (key === "ignored_count") return (a, b) => (a.ignored_count || 0) - (b.ignored_count || 0);
     if (this._view === "failures" && key === "time") {
       const cache = new Map();
       const tod = (r) => {
@@ -640,24 +701,28 @@ class LogDoctorPanel extends HTMLElement {
   _visible() {
     const view = VIEWS[this._view];
     const st = this._st();
-    const archived = st.tab === "archived";
     const needle = st.filter.trim().toLowerCase();
-    let rows = st.records.filter((r) => !!r.resolved === archived);
+    let rows = st.records.filter((r) => tabOf(r) === st.tab);
     if (st.kind) rows = rows.filter((r) => (view.matches ? view.matches(r, st.kind) : view.kindOf(r) === st.kind));
     if (needle) rows = rows.filter((r) => view.search(r).toLowerCase().includes(needle));
     const primary = this._compare(st.sort.key);
     const dir = st.sort.dir;
     rows.sort((a, b) => dir * (primary(a, b) || view.tiebreak(a, b)));
     if (view.groupBy) {
-      // Keep the chosen sort within each group, with the groups in name order ("Other" last).
+      // Keep the chosen sort within each group. Groups go by rank (see
+      // groupRank), then name, with "Other" last.
       const groups = new Map();
       for (const r of rows) {
         const group = view.groupBy(r);
         if (!groups.has(group)) groups.set(group, []);
         groups.get(group).push(r);
       }
+      const rank = (name) => {
+        if (name === OTHER_GROUP) return 9;
+        return view.groupRank ? Math.min(...groups.get(name).map(view.groupRank)) : 0;
+      };
       const names = [...groups.keys()].sort((a, b) =>
-        (a === OTHER_GROUP) - (b === OTHER_GROUP) || a.localeCompare(b, undefined, { sensitivity: "base" }));
+        rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: "base" }));
       rows = names.flatMap((name) => groups.get(name));
     }
     return rows;
@@ -670,7 +735,7 @@ class LogDoctorPanel extends HTMLElement {
     }
     for (const name of Object.keys(VIEWS)) {
       const s = this._st(name);
-      const open = s.records.filter((r) => !r.resolved).length;
+      const open = s.records.filter((r) => tabOf(r) === "open").length;
       this.shadowRoot.querySelector(`[data-count="${name}"]`).textContent = s.loaded ? `(${open})` : "";
     }
     const settings = this._el("settings");
@@ -687,15 +752,18 @@ class LogDoctorPanel extends HTMLElement {
     const view = VIEWS[this._view];
     const st = this._st();
     const archived = st.tab === "archived";
-    const openCount = st.records.filter((r) => !r.resolved).length;
-    const archivedCount = st.records.length - openCount;
+    const ignoredTab = st.tab === "ignored";
+    const tabCounts = { open: 0, archived: 0, ignored: 0 };
+    for (const r of st.records) tabCounts[tabOf(r)] += 1;
+    const archivedCount = tabCounts.archived;
+    const tabNames = { open: "Open", archived: "Archived", ignored: "Ignored" };
     for (const tab of this.shadowRoot.querySelectorAll(".tab")) {
-      const isOpen = tab.dataset.tab === "open";
-      tab.textContent = isOpen ? `Open (${openCount})` : `Archived (${archivedCount})`;
+      tab.textContent = `${tabNames[tab.dataset.tab]} (${tabCounts[tab.dataset.tab]})`;
       tab.classList.toggle("active", tab.dataset.tab === st.tab);
     }
-    for (const el of this.shadowRoot.querySelectorAll("[data-show]")) {
-      el.hidden = el.dataset.show !== st.tab;
+    for (const el of this.shadowRoot.querySelectorAll("[data-show], [data-ignorable]")) {
+      const onTab = el.dataset.show === undefined || el.dataset.show.split(" ").includes(st.tab);
+      el.hidden = !onTab || (el.dataset.ignorable !== undefined && !view.ignorable);
     }
     for (const el of this.shadowRoot.querySelectorAll("[data-only-view]")) {
       el.hidden = el.dataset.onlyView !== this._view;
@@ -758,7 +826,7 @@ class LogDoctorPanel extends HTMLElement {
         trGroup.dataset.groupToggle = lastGroup;
         trGroup.title = collapsed ? "Show this integration's entries" : "Hide this integration's entries";
         const td = document.createElement("td");
-        td.colSpan = columns.length + 1 + (archived ? 1 : 0);
+        td.colSpan = columns.length + 1;
         const caret = document.createElement("span");
         caret.className = "caret";
         caret.textContent = collapsed ? "▸" : "▾";
@@ -799,6 +867,15 @@ class LogDoctorPanel extends HTMLElement {
         td.append(this._dateTime(r.resolved));
         tr.appendChild(td);
       }
+      if (ignoredTab) {
+        const td = this._td("", "when");
+        td.append(this._label("Ignored "), this._dateTime(r.ignored));
+        tr.appendChild(td);
+        const tdCount = this._td("", "num");
+        tdCount.title = "Times logged since it was ignored";
+        tdCount.append(this._label("Since ignored: "), String(r.ignored_count || 0));
+        tr.appendChild(tdCount);
+      }
       frag.appendChild(tr);
       if (view.expandable && st.expanded.has(r.id)) {
         frag.appendChild(this._view === "logs" || this._view === "backups"
@@ -837,6 +914,12 @@ class LogDoctorPanel extends HTMLElement {
     const allCollapsed = groupNames.length > 0 && groupNames.every((g) => st.collapsed.has(g));
     groupsBtn.disabled = groupNames.length === 0;
     groupsBtn.textContent = allCollapsed ? "Expand all" : "Collapse all";
+    const ignoreBtn = this.shadowRoot.querySelector('[data-action="ignore"]');
+    ignoreBtn.disabled = n === 0;
+    ignoreBtn.textContent = n ? `Ignore ${n}` : "Ignore";
+    const unignoreBtn = this.shadowRoot.querySelector('[data-action="unignore"]');
+    unignoreBtn.disabled = n === 0;
+    unignoreBtn.textContent = n ? `Stop ignoring ${n}` : "Stop ignoring";
     const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
     copyBtn.disabled = n === 0;
     if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
@@ -1243,7 +1326,9 @@ class LogDoctorPanel extends HTMLElement {
         st.tab = tab.dataset.tab;
         st.selected.clear();
         st.limit = PAGE_SIZE;
-        if (st.tab === "open" && st.sort.key === "resolved") st.sort = { ...VIEWS[this._view].defaultSort };
+        // A column only this tab had (e.g. Resolved) can't stay the sort.
+        if (!this._columns().some((c) => c.key === st.sort.key)) st.sort = { ...VIEWS[this._view].defaultSort };
+        this._el("scroll").scrollTop = 0;
         this._el("confirm").classList.remove("open");
         this._render();
       }
@@ -1289,6 +1374,16 @@ class LogDoctorPanel extends HTMLElement {
       case "resolve": {
         const ids = selectedIds();
         if (ids.length && (await this._call(WS.RESOLVE, { ids }))) {
+          for (const id of ids) st.selected.delete(id);
+          this._render();
+        }
+        break;
+      }
+      case "ignore":
+      case "unignore": {
+        const ids = selectedIds();
+        const type = btn.dataset.action === "ignore" ? WS.IGNORE : WS.UNIGNORE;
+        if (ids.length && (await this._call(type, { ids }))) {
           for (const id of ids) st.selected.delete(id);
           this._render();
         }

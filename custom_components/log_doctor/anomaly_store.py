@@ -6,7 +6,7 @@ message (see log_parser.py) - updated after every scan:
 
     {"id" (= signature), "level", "logger", "message", "count", "scans",
      "first_seen", "last_seen", "last_scan", "samples", "known_issue",
-     "resolved", "recurred"}
+     "resolved", "recurred", "ignored", "ignored_count"}
 
 - count is the total number of matching log lines across all scans (each
   scan only counts lines since the previous one), scans how many scans
@@ -16,6 +16,12 @@ message (see log_parser.py) - updated after every scan:
 - Marking an anomaly resolved archives it. If a later scan finds it again
   with lines logged *after* it was resolved, it goes back to the open list
   with recurred set, so a fix that didn't hold doesn't go unnoticed.
+- Ignoring an anomaly (ignored = when) moves it to the Ignored tab, for
+  recurring messages that are harmless or can't be fixed. Scans keep
+  updating it (count, last seen, samples) and ignored_count counts the
+  lines logged since it was ignored, but it never goes back to the open
+  list by itself; stopping ignoring it does. Ignored anomalies aren't
+  pruned, so one that's quiet for a while isn't reported as new again.
 
 Backup messages are left out; they're on the Backups view instead (see
 backup_store.py).
@@ -139,18 +145,52 @@ class AnomalyStore(ReviewList):
         )
         if SEVERITY_ORDER.get(group.level, 0) > SEVERITY_ORDER.get(record["level"], 0):
             record["level"] = group.level
-        if record.get("resolved") and last_seen > record["resolved"]:
+        if record.get("ignored"):
+            record["ignored_count"] = record.get("ignored_count", 0) + group.count
+        elif record.get("resolved") and last_seen > record["resolved"]:
             # Logged again after it was marked resolved.
             record["resolved"] = None
             record["recurred"] = flag_recurred
         return record
 
     async def async_resolve(self, ids: list[str]) -> int:
+        # Ignored records stay ignored.
+        ignored = {r["id"] for r in self._records if r.get("ignored")}
+        ids = [i for i in ids if i not in ignored]
         count = await super().async_resolve(ids)
         wanted = set(ids)
         for record in self._records:
             if record["id"] in wanted and record.get("resolved"):
                 record["recurred"] = False
+        return count
+
+    async def async_ignore(self, ids: list[str]) -> int:
+        """Move records to the Ignored tab, from open or archived."""
+        now = dt_util.utcnow().isoformat()
+        wanted = set(ids)
+        count = 0
+        for record in self._records:
+            if record["id"] in wanted and not record.get("ignored"):
+                record["ignored"] = now
+                record["ignored_count"] = 0
+                record["resolved"] = None
+                record["recurred"] = False
+                count += 1
+        if count:
+            self.async_changed()
+        return count
+
+    async def async_unignore(self, ids: list[str]) -> int:
+        """Stop ignoring records; they go back to the open list."""
+        wanted = set(ids)
+        count = 0
+        for record in self._records:
+            if record["id"] in wanted and record.get("ignored"):
+                record["ignored"] = None
+                record.pop("ignored_count", None)
+                count += 1
+        if count:
+            self.async_changed()
         return count
 
     async def async_prune(self, retention_days: int) -> None:
@@ -159,7 +199,9 @@ class AnomalyStore(ReviewList):
             return
         cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
         before = len(self._records)
-        self._records = [r for r in self._records if (r.get("last_seen") or "") >= cutoff]
+        self._records = [
+            r for r in self._records if r.get("ignored") or (r.get("last_seen") or "") >= cutoff
+        ]
         if len(self._records) != before:
             self.async_changed()
 
