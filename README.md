@@ -338,10 +338,16 @@ Batteries aren't checked: battery data is too inconsistent across
 integrations to report reliably. (Before 0.23.0 they were; any battery
 entries left from then are removed on upgrade.)
 
+Entries are grouped under a heading for the integration they belong to
+(for example "Philips Hue", with how many entries it has), so one
+integration's problems appear together; sorting applies within each group.
+Entries that don't belong to an integration are grouped under "Other", at
+the end.
+
 Columns: **Type**, **Name** (with its area and integration; links to the
 device, integration or Repairs page), **Problem** and **Since**; filter by
-type. Click ▸ to see which entities are affected, each linking to its
-history.
+type, or by integration name in the filter box. Click ▸ to see which
+entities are affected, each linking to its history.
 
 These problems end by themselves, so this list keeps up with them:
 

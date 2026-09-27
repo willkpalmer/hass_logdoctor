@@ -37,6 +37,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.loader import async_get_integrations
 from homeassistant.util import dt as dt_util
 
 from .health_store import HealthStore
@@ -109,6 +110,7 @@ class HealthMonitor:
             current.update(self._integration_issues())
             current.update(self._device_issues())
             current.update(await self._repair_issues())
+            await self._name_integrations(current)
             await self.store.async_update(current)
         except Exception:  # noqa: BLE001 - never let a check break anything
             _LOGGER.exception("Log Doctor's device and integration check failed")
@@ -127,6 +129,7 @@ class HealthMonitor:
                 "kind": "integration",
                 "name": entry.title or entry.domain,
                 "sub": entry.domain,
+                "integration": entry.domain,
                 "detail": detail,
                 "link": f"/config/integrations/integration/{entry.domain}",
                 "entities": [],
@@ -163,6 +166,7 @@ class HealthMonitor:
             if now - since < self.offline_after:
                 continue
             name, sub, link, device = self._describe(group, dev_reg, area_reg)
+            integration = self._device_integration(device, group, ent_reg)
             detail = "Offline"
             if device is not None:
                 primary = [
@@ -176,6 +180,7 @@ class HealthMonitor:
                 "kind": "offline",
                 "name": name,
                 "sub": sub,
+                "integration": integration,
                 "detail": detail,
                 "since": since.isoformat(),
                 "link": link,
@@ -206,6 +211,36 @@ class HealthMonitor:
         state = self.hass.states.get(group)
         name = (state and state.attributes.get("friendly_name")) or group
         return name, group, f"/history?entity_id={group}", None
+
+    def _device_integration(
+        self, device: dr.DeviceEntry | None, group: str, ent_reg: er.EntityRegistry
+    ) -> str | None:
+        """The integration (domain) a device or stand-alone entity belongs to."""
+        if device is not None:
+            primary = getattr(device, "primary_config_entry", None)
+            entry_ids = [primary] if primary else sorted(device.config_entries)
+            for entry_id in entry_ids:
+                if entry_id and (entry := self.hass.config_entries.async_get_entry(entry_id)):
+                    return entry.domain
+            return None
+        entity = ent_reg.async_get(group)
+        return entity.platform if entity is not None else None
+
+    async def _name_integrations(self, issues: dict[str, dict[str, Any]]) -> None:
+        """Adds each issue's integration display name (e.g. "Philips Hue"), used to group the list."""
+        domains = {issue["integration"] for issue in issues.values() if issue.get("integration")}
+        names: dict[str, str] = {}
+        if domains:
+            try:
+                found = await async_get_integrations(self.hass, domains)
+            except Exception:  # noqa: BLE001 - fall back to domains
+                found = {}
+            for domain in domains:
+                integration = found.get(domain)
+                names[domain] = integration.name if integration is not None and not isinstance(integration, Exception) else domain
+        for issue in issues.values():
+            domain = issue.get("integration")
+            issue["integration_name"] = names.get(domain) if domain else None
 
     # -- repairs ----------------------------------------------------------
 
@@ -245,6 +280,7 @@ class HealthMonitor:
                 "kind": "repair",
                 "name": title,
                 "sub": issue.domain,
+                "integration": issue.domain,
                 "detail": detail,
                 "since": issue.created.isoformat() if issue.created else None,
                 "link": "/config/repairs",

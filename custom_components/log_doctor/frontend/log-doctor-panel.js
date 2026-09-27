@@ -112,6 +112,10 @@ th.num { text-align: right; }
 td.text { min-width: 260px; word-break: break-word; }
 td.logger { word-break: break-all; min-width: 140px; }
 tbody tr.row:hover { background: var(--secondary-background-color, rgba(0,0,0,0.03)); }
+tbody tr.group td {
+  background: var(--secondary-background-color, #f5f5f5); font-weight: 500; padding: 6px 12px;
+}
+tbody tr.group .group-count { font-weight: 400; color: var(--secondary-text-color, #727272); }
 tbody tr.row.selected { background: rgba(3, 169, 244, 0.1); }
 tr.details td { border-top: 0; padding-top: 0; }
 .detail-box {
@@ -166,6 +170,7 @@ a:hover { text-decoration: underline; }
   tbody tr.row td { border: 0; padding: 0; min-width: 0; grid-column: 2; text-align: left; }
   tbody tr.row td.check { grid-column: 1; grid-row: 1 / span 8; }
   tbody tr.row td.when, tbody tr.row td.num { font-size: 12px; color: var(--secondary-text-color, #727272); }
+  tbody tr.group, tbody tr.group td { display: block; }
   tr.details { display: block; padding: 0 12px 10px; }
   tr.details td { display: block; padding: 0; }
   .detail-box { margin-left: 40px; }
@@ -221,6 +226,8 @@ const TEMPLATE = `
 // -- the list views -----------------------------------------------------
 
 const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
+// Heading for Devices & integrations rows that don't belong to an integration
+const OTHER_GROUP = "Other";
 
 // Successes sort below every problem level.
 function backupRank(r) {
@@ -294,7 +301,9 @@ const VIEWS = {
     filterPlaceholder: "Filter by name, area or problem",
     kinds: [["", "Everything"], ["offline", "Offline devices"], ["integration", "Integrations"], ["repair", "Repairs"]],
     kindOf: (r) => r.kind,
-    search: (r) => `${r.name} ${r.sub} ${r.detail} ${(r.entities || []).join(" ")}`,
+    search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")}`,
+    // Rows are shown under a heading for their integration
+    groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,
     defaultSort: { key: "since", dir: -1 },
     empty: {
       open: "No device or integration problems. 🎉",
@@ -591,6 +600,18 @@ class LogDoctorPanel extends HTMLElement {
     const primary = this._compare(st.sort.key);
     const dir = st.sort.dir;
     rows.sort((a, b) => dir * (primary(a, b) || view.tiebreak(a, b)));
+    if (view.groupBy) {
+      // Keep the chosen sort within each group, with the groups in name order ("Other" last).
+      const groups = new Map();
+      for (const r of rows) {
+        const group = view.groupBy(r);
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(r);
+      }
+      const names = [...groups.keys()].sort((a, b) =>
+        (a === OTHER_GROUP) - (b === OTHER_GROUP) || a.localeCompare(b, undefined, { sensitivity: "base" }));
+      rows = names.flatMap((name) => groups.get(name));
+    }
     return rows;
   }
 
@@ -664,7 +685,26 @@ class LogDoctorPanel extends HTMLElement {
     const body = this._el("body");
     body.textContent = "";
     const frag = document.createDocumentFragment();
+    const groupSizes = new Map();
+    if (view.groupBy) {
+      for (const r of rows) groupSizes.set(view.groupBy(r), (groupSizes.get(view.groupBy(r)) || 0) + 1);
+    }
+    let lastGroup = null;
     for (const r of shown) {
+      if (view.groupBy && view.groupBy(r) !== lastGroup) {
+        lastGroup = view.groupBy(r);
+        const trGroup = document.createElement("tr");
+        trGroup.className = "group";
+        const td = document.createElement("td");
+        td.colSpan = columns.length + 1 + (archived ? 1 : 0);
+        td.textContent = lastGroup;
+        const count = document.createElement("span");
+        count.className = "group-count";
+        count.textContent = ` (${groupSizes.get(lastGroup)})`;
+        td.appendChild(count);
+        trGroup.appendChild(td);
+        frag.appendChild(trGroup);
+      }
       const tr = document.createElement("tr");
       tr.className = "row";
       tr.dataset.id = r.id;
