@@ -6,7 +6,8 @@
 //   #logs      Log review - the anomalies the daily scans reported
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
-//   #health    Devices & integrations - offline devices, integrations
+//   #health    Devices & integrations - offline devices, unavailable
+//              entities, integrations
 //              that failed to load, and Repairs issues
 //   #backups   Backups - backup problems and successes, from Home
 //              Assistant's own backup and the GDrive Backup Utility add-on
@@ -145,6 +146,7 @@ a:hover { text-decoration: underline; }
 .chip.recurred { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .chip.known, .chip.recovered, .chip.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
 .chip.offline, .chip.integration { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
+.chip.unavailable { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.repair, .chip.script, .chip.source { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .entity-list { margin: 0; padding-left: 18px; font-size: 13px; }
 .empty, .status { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #727272); }
@@ -299,7 +301,7 @@ const VIEWS = {
     list: "health",
     noun: ["entry", "entries"],
     filterPlaceholder: "Filter by name, area or problem",
-    kinds: [["", "Everything"], ["offline", "Offline devices"], ["integration", "Integrations"], ["repair", "Repairs"]],
+    kinds: [["", "Everything"], ["offline", "Offline devices"], ["unavailable", "Unavailable entities"], ["integration", "Integrations"], ["repair", "Repairs"]],
     kindOf: (r) => r.kind,
     search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")}`,
     // Rows are shown under a heading for their integration
@@ -363,8 +365,9 @@ const VIEWS = {
 
 const HEALTH_KINDS = {
   offline: { label: "Offline", order: 0 },
-  integration: { label: "Integration", order: 1 },
-  repair: { label: "Repair", order: 2 },
+  unavailable: { label: "Unavailable", order: 1 },
+  integration: { label: "Integration", order: 2 },
+  repair: { label: "Repair", order: 3 },
 };
 
 const RESOLVED_COLUMN = { key: "resolved", label: "Resolved", firstDir: -1 };

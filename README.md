@@ -320,19 +320,26 @@ since both runs failed.
 Things that have stopped working, checked every 5 minutes (and 5 minutes
 after Home Assistant starts, once things have had time to come up):
 
-- **Offline** - a device whose entities have been unavailable for at
-  least the time set in Settings (default 1 hour), or an entity with no
-  device. Shown as "Offline", or "2 of 5 entities unavailable" when only
-  some of its entities are down. Diagnostic entities alone (e.g. a firmware
-  update entity) don't count, and devices of an integration that failed to
-  load are left to that integration's entry, so one broken integration
-  isn't reported as dozens of devices.
+- **Offline** - a device whose main entities have all been unavailable
+  for at least the time set in Settings (default 1 hour), or an entity
+  with no device.
+- **Unavailable** - a device with some unavailable entities (diagnostic
+  and config ones included) that isn't offline as a whole, e.g. "2 of 5
+  entities unavailable", so every device with entities to tidy up gets a
+  row. Entities the integration no longer provides (Home Assistant keeps
+  them as unavailable "restored" entities) are listed straight away,
+  without waiting for the offline time, and called out as "no longer
+  provided". Click the device's name to open it and remove them.
 - **Integration** - an integration that failed to set up, is retrying
   setup, or failed to migrate, with the reason Home Assistant gives.
   Disabled integrations aren't checked.
 - **Repair** - an issue from Home Assistant's own **Repairs** page that
   hasn't been ignored there, with its severity and, if it has one, the
   version it breaks in.
+
+Devices of an integration that failed to load are left to that
+integration's entry, so one broken integration isn't reported as dozens
+of devices.
 
 Batteries aren't checked: battery data is too inconsistent across
 integrations to report reliably. (Before 0.23.0 they were; any battery

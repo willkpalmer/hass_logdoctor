@@ -6,16 +6,21 @@ Doctor it only reports; it never reloads, restarts or changes anything.
 
 What counts as a problem:
 
-- offline - a device (or an entity with no device) whose entities have
-  been unavailable for at least the configured time. Diagnostic and config
-  entities alone don't count, so a device whose main entities work isn't
-  reported because, say, its firmware-update entity is unavailable. Entities
-  of integrations that failed to load are left to the integration check,
-  so one broken integration isn't also reported as dozens of devices.
+- offline - a device (or an entity with no device) whose main entities
+  have all been unavailable for at least the configured time. Diagnostic
+  and config entities don't decide this.
+- unavailable - a device (or an entity with no device) with some
+  unavailable entities, diagnostic and config ones included, that isn't
+  offline as a whole, so there's a row for every device with entities to
+  tidy up. Entities the integration no longer provides (restored by Home
+  Assistant as unavailable) are counted straight away and called out.
 - integration - a config entry that failed to set up, is retrying setup,
   failed to migrate or failed to unload (disabled ones aren't checked).
 - repair - an active issue in Home Assistant's Repairs that hasn't been
   ignored there.
+
+Entities of integrations that failed to load are left to the integration
+check, so one broken integration isn't also reported as dozens of devices.
 
 Home Assistant resets every entity's "last changed" time on restart, so
 right after a restart a device that was already offline only counts from
@@ -144,47 +149,69 @@ class HealthMonitor:
         area_reg = ar.async_get(self.hass)
         now = dt_util.utcnow()
 
-        unavailable: dict[str, list[tuple[str, datetime]]] = {}
+        # group -> [(entity_id, last_changed, primary, restored)]
+        unavailable: dict[str, list[tuple[str, datetime, bool, bool]]] = {}
 
         for state in self.hass.states.async_all():
+            if state.state != STATE_UNAVAILABLE:
+                continue
             entry = ent_reg.async_get(state.entity_id)
             if entry is not None and entry.config_entry_id:
                 config_entry = self.hass.config_entries.async_get_entry(entry.config_entry_id)
                 if config_entry is not None and config_entry.state is not ConfigEntryState.LOADED:
                     continue  # reported as an integration problem instead
             group = entry.device_id if entry is not None and entry.device_id else state.entity_id
-
-            if state.state == STATE_UNAVAILABLE:
-                if entry is not None and entry.entity_category is not None:
-                    continue  # diagnostic/config entities alone don't count
-                unavailable.setdefault(group, []).append((state.entity_id, state.last_changed))
+            primary = entry is None or entry.entity_category is None
+            # Home Assistant restores a registered entity its integration
+            # no longer provides as unavailable, with "restored": true.
+            restored = bool(state.attributes.get("restored"))
+            unavailable.setdefault(group, []).append(
+                (state.entity_id, state.last_changed, primary, restored)
+            )
 
         issues: dict[str, dict[str, Any]] = {}
 
         for group, entities in unavailable.items():
-            since = min(changed for _, changed in entities)
-            if now - since < self.offline_after:
+            # Entities no longer provided are reported straight away; others
+            # once they've been unavailable for the configured time.
+            counted = [
+                e for e in entities if e[3] or now - e[1] >= self.offline_after
+            ]
+            if not counted:
                 continue
+            since = min(e[1] for e in counted)
+            gone = sum(1 for e in counted if e[3])
             name, sub, link, device = self._describe(group, dev_reg, area_reg)
             integration = self._device_integration(device, group, ent_reg)
-            detail = "Offline"
             if device is not None:
-                primary = [
+                present = [
                     e for e in er.async_entries_for_device(ent_reg, device.id)
-                    if e.entity_category is None and not e.disabled_by
-                    and self.hass.states.get(e.entity_id) is not None
+                    if not e.disabled_by and self.hass.states.get(e.entity_id) is not None
                 ]
-                if len(entities) < len(primary):
-                    detail = f"{len(entities)} of {len(primary)} entities unavailable"
+                primary = [e for e in present if e.entity_category is None]
+                primary_down = sum(1 for e in counted if e[2])
+                offline = bool(primary) and primary_down >= len(primary)
+                if offline:
+                    detail = "Offline"
+                else:
+                    detail = f"{len(counted)} of {len(present)} entities unavailable"
+            else:
+                offline = counted[0][2] and not gone
+                detail = "Offline" if offline else "Unavailable"
+            if gone:
+                detail += (
+                    " · no longer provided" if device is None
+                    else f" · {gone} no longer provided"
+                )
             issues[f"offline:{group}"] = {
-                "kind": "offline",
+                "kind": "offline" if offline else "unavailable",
                 "name": name,
                 "sub": sub,
                 "integration": integration,
                 "detail": detail,
                 "since": since.isoformat(),
                 "link": link,
-                "entities": sorted(e for e, _ in entities)[:_MAX_ENTITIES],
+                "entities": sorted(e[0] for e in counted)[:_MAX_ENTITIES],
             }
 
         return issues

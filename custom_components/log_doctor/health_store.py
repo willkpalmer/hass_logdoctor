@@ -6,7 +6,8 @@ filled by health_monitor.py. One record per problem:
     {"id", "kind", "name", "sub", "detail", "since", "link", "entities",
      "active", "resolved", "recurred", "recovered"}
 
-kind is "offline" (a device or entity unavailable), "integration"
+kind is "offline" (a device or entity unavailable), "unavailable" (some
+of a device's entities unavailable), "integration"
 (failed to load) or "repair" (a Home Assistant Repairs issue). Low
 battery checks were dropped in 0.23.0 (battery data is too unreliable
 across integrations); their records are removed on load.
