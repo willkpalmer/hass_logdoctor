@@ -128,15 +128,51 @@ def parse_report(text: str) -> list[Anomaly]:
     return anomalies
 
 
-async def _async_research_anomaly(client: AsyncOpenAI, anomaly: Anomaly) -> str:
-    """Ask the model to research one anomaly and return its findings as text."""
-    user_prompt = (
+def build_user_prompt(anomaly: Anomaly) -> str:
+    """The message sent to the model about one anomaly."""
+    return (
         f"Logger: {anomaly.logger}\n"
         f"Severity: {anomaly.level}\n"
         f"Occurrences: {anomaly.count} (first seen {anomaly.first_seen}, "
         f"last seen {anomaly.last_seen})\n\n"
         f"Log lines:\n```\n{anomaly.log_text}\n```"
     )
+
+
+def anomaly_from_record(record: dict) -> Anomaly:
+    """An Anomaly from a Log review record (see anomaly_store.py)."""
+    return Anomaly(
+        level=record.get("level") or "",
+        count=record.get("count") or 0,
+        logger=record.get("logger") or "",
+        signature=record.get("id") or "",
+        first_seen=record.get("first_seen") or "unknown",
+        last_seen=record.get("last_seen") or "unknown",
+        log_text="\n".join(record.get("samples") or [record.get("message") or ""]).strip(),
+    )
+
+
+def build_copy_prompt(anomalies: list[Anomaly]) -> str:
+    """One prompt covering the given anomalies, to paste into any AI chat.
+
+    The same instructions and per-anomaly details the investigation stage
+    sends the model, combined into a single message.
+    """
+    if len(anomalies) == 1:
+        return f"{SYSTEM_PROMPT}\n\n---\n\n{build_user_prompt(anomalies[0])}\n"
+    parts = [
+        SYSTEM_PROMPT,
+        f"There are {len(anomalies)} anomalies below. Answer each one in turn, "
+        "under a heading with its number and logger.",
+    ]
+    for number, anomaly in enumerate(anomalies, 1):
+        parts.append(f"---\n\n## Anomaly {number} of {len(anomalies)}\n\n{build_user_prompt(anomaly)}")
+    return "\n\n".join(parts) + "\n"
+
+
+async def _async_research_anomaly(client: AsyncOpenAI, anomaly: Anomaly) -> str:
+    """Ask the model to research one anomaly and return its findings as text."""
+    user_prompt = build_user_prompt(anomaly)
 
     response = await client.responses.create(
         model=MODEL,

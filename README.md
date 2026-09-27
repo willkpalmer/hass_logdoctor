@@ -293,6 +293,13 @@ the built-in knowledge base's explanation and suggested fix when it
 recognizes the message (marked **Known issue**), and the raw log lines
 (with tracebacks) from the latest scan that found it.
 
+**Copy investigation prompt** copies, for the selected entries, the prompt
+the investigation stage would send the AI model - its instructions plus
+each entry's logger, level, count, first/last seen and raw log lines - to
+the clipboard, so you can paste it into any AI chat. Several entries go
+into one prompt, numbered, in the order they're listed. It doesn't need
+an OpenAI API key and sends nothing anywhere itself.
+
 If an anomaly you've marked resolved is logged again *after* you resolved
 it, the next scan moves it back to **Open**, marked **Recurred**, so a fix
 that didn't hold doesn't go unnoticed. Entries not seen within the report

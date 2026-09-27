@@ -8,6 +8,10 @@ a "list" field:
 - "health" - the Devices & integrations view (health_store.py)
 - "backups" - the Backups view (backup_store.py)
 
+log_doctor/review/investigation_prompt builds, for selected Log review
+entries, the prompt the investigation stage would send (see
+investigation.py), for the panel to copy to the clipboard.
+
 All commands are admin-only, like the panel itself. The panel subscribes
 once per list and gets the full list back straight away and again after
 every change, so new entries appear live and open browser tabs stay in
@@ -23,6 +27,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from . import settings_api
+from .investigation import anomaly_from_record, build_copy_prompt
 from .const import (
     DATA_ANOMALY_STORE,
     DATA_BACKUP_STORE,
@@ -35,6 +40,7 @@ WS_SUBSCRIBE = "log_doctor/review/subscribe"
 WS_RESOLVE = "log_doctor/review/resolve"
 WS_RESTORE = "log_doctor/review/restore"
 WS_CLEAR_ARCHIVED = "log_doctor/review/clear_archived"
+WS_INVESTIGATION_PROMPT = "log_doctor/review/investigation_prompt"
 
 _LISTS = {
     "anomalies": DATA_ANOMALY_STORE,
@@ -53,6 +59,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_resolve)
     websocket_api.async_register_command(hass, websocket_restore)
     websocket_api.async_register_command(hass, websocket_clear_archived)
+    websocket_api.async_register_command(hass, websocket_investigation_prompt)
 
 
 def _get_list(
@@ -125,3 +132,26 @@ async def websocket_clear_archived(
     if (review_list := _get_list(hass, connection, msg)) is None:
         return
     connection.send_result(msg["id"], {"count": await review_list.async_clear_archived()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_INVESTIGATION_PROMPT, vol.Required("ids"): vol.All([str], vol.Length(min=1, max=1_000))}
+)
+@callback
+def websocket_investigation_prompt(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    store: ReviewList | None = hass.data.get(DATA_ANOMALY_STORE)
+    if store is None:
+        connection.send_error(msg["id"], "not_loaded", "WP Log Doctor isn't loaded")
+        return
+    by_id = {record["id"]: record for record in store.records}
+    # In the order the panel lists them.
+    anomalies = [anomaly_from_record(by_id[i]) for i in msg["ids"] if i in by_id]
+    if not anomalies:
+        connection.send_error(msg["id"], "not_found", "None of those log entries exist any more")
+        return
+    connection.send_result(
+        msg["id"], {"prompt": build_copy_prompt(anomalies), "count": len(anomalies)}
+    )

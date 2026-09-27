@@ -27,6 +27,7 @@ const WS = {
   RESOLVE: "log_doctor/review/resolve",
   RESTORE: "log_doctor/review/restore",
   CLEAR_ARCHIVED: "log_doctor/review/clear_archived",
+  INVESTIGATION_PROMPT: "log_doctor/review/investigation_prompt",
 };
 
 // Rows rendered at once; "Show more" adds this many again.
@@ -203,6 +204,8 @@ const TEMPLATE = `
       <input type="search" data-el="filter">
       <select data-el="kind" title="Show"></select>
       <span class="spacer"></span>
+      <button class="action secondary" data-action="copy-prompt" data-view="logs" disabled
+        title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
       <button class="action danger secondary" data-action="ask-clear" data-show="archived" disabled>Clear archive</button>
@@ -652,6 +655,9 @@ class LogDoctorPanel extends HTMLElement {
     for (const el of this.shadowRoot.querySelectorAll("[data-show]")) {
       el.hidden = el.dataset.show !== st.tab;
     }
+    for (const el of this.shadowRoot.querySelectorAll("[data-view]")) {
+      el.hidden = el.dataset.view !== this._view;
+    }
 
     const rows = this._visible();
     const shown = rows.slice(0, st.limit);
@@ -767,8 +773,76 @@ class LogDoctorPanel extends HTMLElement {
     const restoreBtn = this.shadowRoot.querySelector('[data-action="restore"]');
     restoreBtn.disabled = n === 0;
     restoreBtn.textContent = n ? `Restore ${n} to open` : "Restore to open";
+    const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
+    copyBtn.disabled = n === 0;
+    if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
     this.shadowRoot.querySelector('[data-action="ask-clear"]').disabled = archivedCount === 0;
     if (archivedCount === 0) this._el("confirm").classList.remove("open");
+  }
+
+  // Copies the investigation prompt for the given Log review entries. The
+  // prompt comes from the integration (the same one the investigation stage
+  // sends); the clipboard write is started straight from the click, with
+  // the text still to come, so browsers that need a user gesture allow it.
+  async _copyPrompt(btn, ids) {
+    const fetched = this._hass.callWS({ type: WS.INVESTIGATION_PROMPT, ids });
+    const label = btn.textContent;
+    const done = (text) => {
+      btn.textContent = text;
+      btn.dataset.busy = "1";
+      setTimeout(() => {
+        delete btn.dataset.busy;
+        btn.textContent = label;
+        this._render();
+      }, 2000);
+    };
+    let prompt;
+    try {
+      prompt = fetched.then((res) => res.prompt);
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          const blob = prompt.then((text) => new Blob([text], { type: "text/plain" }));
+          await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+          done("Copied ✓");
+          return;
+        } catch (_err) {
+          // Fall through to the other ways of copying.
+        }
+      }
+      const text = await prompt;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          done("Copied ✓");
+          return;
+        } catch (_err) {
+          // Fall through.
+        }
+      }
+      if (this._copyWithSelection(text)) {
+        done("Copied ✓");
+        return;
+      }
+      // Couldn't reach the clipboard (e.g. Home Assistant served over plain
+      // http); let the user copy it by hand.
+      window.prompt("Copy the investigation prompt (Ctrl+C / ⌘C):", text);
+    } catch (err) {
+      alert(`WP Log Doctor: ${err.message || err.code || err}`);
+    }
+  }
+
+  _copyWithSelection(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (_err) { ok = false; }
+    ta.remove();
+    return ok;
   }
 
   _logCells(tr, r) {
@@ -1140,6 +1214,12 @@ class LogDoctorPanel extends HTMLElement {
           for (const id of ids) st.selected.delete(id);
           this._render();
         }
+        break;
+      }
+      case "copy-prompt": {
+        // In the order they're listed.
+        const ids = this._visible().filter((r) => st.selected.has(r.id)).map((r) => r.id);
+        if (ids.length) await this._copyPrompt(btn, ids);
         break;
       }
       case "ask-clear": {
