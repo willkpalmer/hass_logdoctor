@@ -117,6 +117,8 @@ tbody tr.row:hover { background: var(--secondary-background-color, rgba(0,0,0,0.
 tbody tr.group td {
   background: var(--secondary-background-color, #f5f5f5); font-weight: 500; padding: 6px 12px;
 }
+tbody tr.group { cursor: pointer; user-select: none; }
+tbody tr.group .caret { display: inline-block; width: 1.2em; color: var(--secondary-text-color, #727272); }
 tbody tr.group .group-count { font-weight: 400; color: var(--secondary-text-color, #727272); }
 tbody tr.row.selected { background: rgba(3, 169, 244, 0.1); }
 tr.details td { border-top: 0; padding-top: 0; }
@@ -206,6 +208,8 @@ const TEMPLATE = `
       <span class="spacer"></span>
       <button class="action secondary" data-action="copy-prompt" data-only-view="logs" disabled
         title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
+      <button class="action secondary" data-action="toggle-groups" data-only-view="health"
+        title="Collapse or expand every integration">Collapse all</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
       <button class="action danger secondary" data-action="ask-clear" data-show="archived" disabled>Clear archive</button>
@@ -233,6 +237,8 @@ const TEMPLATE = `
 const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
 // Heading for Devices & integrations rows that don't belong to an integration
 const OTHER_GROUP = "Other";
+// Where the collapsed groups of each view are remembered, per browser.
+const COLLAPSED_KEY = "log_doctor.collapsed_groups";
 
 // Successes sort below every problem level.
 function backupRank(r) {
@@ -393,6 +399,7 @@ class LogDoctorPanel extends HTMLElement {
         sort: { ...view.defaultSort },
         selected: new Set(),
         expanded: new Set(),
+        collapsed: this._loadCollapsed(name),
         filter: "",
         kind: "",
         limit: PAGE_SIZE,
@@ -538,6 +545,41 @@ class LogDoctorPanel extends HTMLElement {
     this._render();
   }
 
+  // Collapses a group of the current view; its entries are deselected, so
+  // nothing hidden is acted on.
+  _collapse(group) {
+    const view = VIEWS[this._view];
+    const st = this._st();
+    st.collapsed.add(group);
+    for (const r of st.records) if (view.groupBy(r) === group) st.selected.delete(r.id);
+  }
+
+  _inCollapsedGroup(r) {
+    const view = VIEWS[this._view];
+    return !!view.groupBy && this._st().collapsed.has(view.groupBy(r));
+  }
+
+  _loadCollapsed(name) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "{}");
+      return new Set(Array.isArray(saved[name]) ? saved[name] : []);
+    } catch (_err) {
+      return new Set();
+    }
+  }
+
+  _saveCollapsed() {
+    try {
+      const saved = {};
+      for (const [name, st] of Object.entries(this._state)) {
+        if (st.collapsed.size) saved[name] = [...st.collapsed];
+      }
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(saved));
+    } catch (_err) {
+      // Not remembered; it still works for this visit.
+    }
+  }
+
   async _call(type, extra = {}) {
     try {
       return await this._hass.callWS({ type, list: VIEWS[this._view].list, ...extra });
@@ -660,7 +702,10 @@ class LogDoctorPanel extends HTMLElement {
     }
 
     const rows = this._visible();
-    const shown = rows.slice(0, st.limit);
+    // Rows in collapsed groups aren't shown, and don't count towards the page.
+    const isCollapsed = (r) => !!view.groupBy && st.collapsed.has(view.groupBy(r));
+    const shown = rows.filter((r) => !isCollapsed(r)).slice(0, st.limit);
+    const shownIds = new Set(shown.map((r) => r.id));
     const visibleIds = new Set(rows.map((r) => r.id));
     const selectedVisible = [...st.selected].filter((id) => visibleIds.has(id));
     const columns = this._columns();
@@ -674,8 +719,9 @@ class LogDoctorPanel extends HTMLElement {
     all.type = "checkbox";
     all.dataset.el = "select-all";
     all.title = "Select all shown";
-    all.checked = rows.length > 0 && selectedVisible.length === rows.length;
-    all.indeterminate = selectedVisible.length > 0 && selectedVisible.length < rows.length;
+    const selectable = rows.filter((r) => !isCollapsed(r)).length;
+    all.checked = selectable > 0 && selectedVisible.length === selectable;
+    all.indeterminate = selectedVisible.length > 0 && selectedVisible.length < selectable;
     thCheck.appendChild(all);
     head.appendChild(thCheck);
     for (const col of columns) {
@@ -699,14 +745,24 @@ class LogDoctorPanel extends HTMLElement {
       for (const r of rows) groupSizes.set(view.groupBy(r), (groupSizes.get(view.groupBy(r)) || 0) + 1);
     }
     let lastGroup = null;
-    for (const r of shown) {
+    const lastShown = shown.length ? shown[shown.length - 1].id : null;
+    let pastPage = shown.length === 0;
+    for (const r of rows) {
+      const collapsed = isCollapsed(r);
+      // Stop after the page's last row; collapsed groups up to there still get a heading.
+      if (pastPage && !collapsed) break;
       if (view.groupBy && view.groupBy(r) !== lastGroup) {
         lastGroup = view.groupBy(r);
         const trGroup = document.createElement("tr");
         trGroup.className = "group";
+        trGroup.dataset.groupToggle = lastGroup;
+        trGroup.title = collapsed ? "Show this integration's entries" : "Hide this integration's entries";
         const td = document.createElement("td");
         td.colSpan = columns.length + 1 + (archived ? 1 : 0);
-        td.textContent = lastGroup;
+        const caret = document.createElement("span");
+        caret.className = "caret";
+        caret.textContent = collapsed ? "▸" : "▾";
+        td.append(caret, lastGroup);
         const count = document.createElement("span");
         count.className = "group-count";
         count.textContent = ` (${groupSizes.get(lastGroup)})`;
@@ -714,6 +770,8 @@ class LogDoctorPanel extends HTMLElement {
         trGroup.appendChild(td);
         frag.appendChild(trGroup);
       }
+      if (collapsed || !shownIds.has(r.id)) continue;
+      if (r.id === lastShown) pastPage = true;
       const tr = document.createElement("tr");
       tr.className = "row";
       tr.dataset.id = r.id;
@@ -760,7 +818,8 @@ class LogDoctorPanel extends HTMLElement {
     const statusEl = this._el("status");
     statusEl.textContent = status;
     statusEl.hidden = !status;
-    this._el("more").hidden = rows.length <= shown.length;
+    const expandedCount = rows.filter((r) => !isCollapsed(r)).length;
+    this._el("more").hidden = expandedCount <= shown.length;
     this._el("footer").textContent = rows.length
       ? `Showing ${shown.length} of ${rows.length}` + (selectedVisible.length ? ` · ${selectedVisible.length} selected` : "")
       : "";
@@ -773,6 +832,11 @@ class LogDoctorPanel extends HTMLElement {
     const restoreBtn = this.shadowRoot.querySelector('[data-action="restore"]');
     restoreBtn.disabled = n === 0;
     restoreBtn.textContent = n ? `Restore ${n} to open` : "Restore to open";
+    const groupsBtn = this.shadowRoot.querySelector('[data-action="toggle-groups"]');
+    const groupNames = view.groupBy ? [...groupSizes.keys()] : [];
+    const allCollapsed = groupNames.length > 0 && groupNames.every((g) => st.collapsed.has(g));
+    groupsBtn.disabled = groupNames.length === 0;
+    groupsBtn.textContent = allCollapsed ? "Expand all" : "Collapse all";
     const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
     copyBtn.disabled = n === 0;
     if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
@@ -1119,7 +1183,8 @@ class LogDoctorPanel extends HTMLElement {
       else st.selected.delete(target.dataset.row);
       this._render();
     } else if (target.dataset.el === "select-all") {
-      for (const r of this._visible()) {
+      // Not the entries hidden in collapsed groups.
+      for (const r of this._visible().filter((r) => !this._inCollapsedGroup(r))) {
         if (target.checked) st.selected.add(r.id);
         else st.selected.delete(r.id);
       }
@@ -1153,6 +1218,15 @@ class LogDoctorPanel extends HTMLElement {
       if (find("action")?.dataset.action === "menu") {
         this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
       }
+      return;
+    }
+    const groupRow = find("groupToggle");
+    if (groupRow) {
+      const group = groupRow.dataset.groupToggle;
+      if (st.collapsed.has(group)) st.collapsed.delete(group);
+      else this._collapse(group);
+      this._saveCollapsed();
+      this._render();
       return;
     }
     const expand = find("expand");
@@ -1196,6 +1270,18 @@ class LogDoctorPanel extends HTMLElement {
       case "menu":
         this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
         break;
+      case "toggle-groups": {
+        const view = VIEWS[this._view];
+        const names = new Set(this._visible().map((r) => view.groupBy(r)));
+        const allCollapsed = [...names].every((g) => st.collapsed.has(g));
+        for (const g of names) {
+          if (allCollapsed) st.collapsed.delete(g);
+          else this._collapse(g);
+        }
+        this._saveCollapsed();
+        this._render();
+        break;
+      }
       case "more":
         st.limit += PAGE_SIZE;
         this._render();

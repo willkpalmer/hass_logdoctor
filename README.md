@@ -358,6 +358,12 @@ integration's problems appear together; sorting applies within each group.
 Entries that don't belong to an integration are grouped under "Other", at
 the end.
 
+Click an integration's heading to collapse it (▸) or expand it again (▾);
+**Collapse all** / **Expand all** does every integration at once. Which
+integrations are collapsed is remembered in your browser. Collapsing an
+integration deselects its entries, and **Select all** skips collapsed
+ones, so nothing hidden gets marked resolved by accident.
+
 Columns: **Type**, **Name** (with its area and integration; links to the
 device, integration or Repairs page), **Problem** and **Since**; filter by
 type, or by integration name in the filter box. Click ▸ to see which
