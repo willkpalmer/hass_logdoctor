@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .const import SEVERITY_ORDER
 
@@ -23,13 +23,77 @@ _TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 # Supervisor/Host/add-on log text is often colorized for a terminal.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-# Best-effort severity detection for sources that aren't formatted like
-# Home Assistant Core's own logger (Host journal lines, arbitrary add-on
-# stdout, etc). Matched as a whole word, case-insensitively, so "errors" or
-# "warns" mid-sentence don't trip it, but "Warning:", "error:", "FATAL" all
-# do - non-Python add-ons are inconsistent about casing.
-_LEVEL_KEYWORD_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\b", re.IGNORECASE)
+# The Supervisor's journal lines (Host, and add-ons when it adds it) start
+# with the time in UTC, without an offset, then host and process:
+# 2026-09-27 21:47:56.772 homeassistant containerd[652]: <message>
+_JOURNAL_PREFIX_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) \S+ [^\s:]+: "
+)
+
+# A level stated by the line itself wins over any keyword in it:
+# logfmt (containerd, Docker, Go programs) level=warning, JSON
+# "level": "error", or a leading "INFO:" / "[WARNING]" (bashio and Python
+# style, optionally after a "[time]" or "time" stamp).
+_EXPLICIT_LEVEL_RES = [
+    re.compile(r"\blevel=\"?(?P<level>[A-Za-z]+)"),
+    re.compile(r"\"(?:level|severity)\"\s*:\s*\"(?P<level>[A-Za-z]+)\""),
+    re.compile(
+        r"^(?:\[[^\]]*\]\s*|\d{2}:\d{2}:\d{2}\S*\s+)?\[?(?P<level>TRACE|DEBUG|INFO|NOTICE|"
+        r"WARNING|WARN|ERROR|ERR|CRITICAL|CRIT|FATAL|PANIC)\]?(?::|\s+-|\])",
+        re.IGNORECASE,
+    ),
+]
+_EXPLICIT_LEVELS = {
+    "trace": None, "debug": None, "info": None, "notice": None,
+    "warn": "WARNING", "warning": "WARNING",
+    "err": "ERROR", "error": "ERROR",
+    "crit": "CRITICAL", "critical": "CRITICAL", "fatal": "CRITICAL", "panic": "CRITICAL",
+}
+
+# Otherwise, best-effort severity detection for lines that don't state one
+# (arbitrary add-on output, etc). Matched case-insensitively as a
+# standalone word - "Warning:", "error:", "FATAL" count, "errors", "warns",
+# "no_error" don't - and not as part of a dotted, dashed or slashed name
+# like io.containerd.warning.v1 or error-handler.
+_LEVEL_KEYWORD_RE = re.compile(
+    r"(?<![\w.\-/])(CRITICAL|FATAL|ERROR|WARNING|WARN)(?![\w\-/]|\.\w)", re.IGNORECASE
+)
 _LEVEL_ALIASES = {"WARN": "WARNING", "FATAL": "CRITICAL"}
+
+
+def _journal_timestamp(line: str) -> tuple[datetime | None, str]:
+    """(local time, the message after the prefix) for a journal line.
+
+    The journal's time is UTC; converted to local time, naive, like Home
+    Assistant's own log. (None, line) if it has no journal prefix.
+    """
+    match = _JOURNAL_PREFIX_RE.match(line)
+    if not match:
+        return None, line
+    try:
+        utc = datetime.strptime(match.group("ts")[:23], "%Y-%m-%d %H:%M:%S.%f")
+    except ValueError:
+        try:
+            utc = datetime.strptime(match.group("ts"), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None, line
+    local = utc.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    return local, line[match.end():]
+
+
+def _severity(message: str) -> str | None:
+    """The level of a line not in Home Assistant's format, or None if it
+    isn't a warning or worse."""
+    for pattern in _EXPLICIT_LEVEL_RES:
+        if match := pattern.search(message):
+            level = match.group("level").lower()
+            if level in _EXPLICIT_LEVELS:
+                return _EXPLICIT_LEVELS[level]
+    keyword_match = _LEVEL_KEYWORD_RE.search(message)
+    if not keyword_match:
+        return None
+    keyword = keyword_match.group(1).upper()
+    return _LEVEL_ALIASES.get(keyword, keyword)
 
 # Patterns used to normalize a message into a stable "signature" so that
 # repeated occurrences of the same underlying problem (with different
@@ -133,10 +197,14 @@ def parse_supervisor_log_text(
 
     These aren't guaranteed to be formatted like Home Assistant Core's own
     logger, so this first tries the same structured format (Supervisor
-    itself uses it) and otherwise falls back to a keyword-based severity
-    scan. Lines that don't mention a level keyword are simply not anomalies
-    and are skipped - there's no traceback-folding here since these sources
-    are fetched as a short, bounded tail rather than a full historical file.
+    itself uses it). Otherwise the level the line states itself is used
+    (level=info, "level": "error", a leading "WARNING:"), and only failing
+    that a keyword-based severity scan; lines below warning are simply not
+    anomalies and are skipped. Journal lines (Host) are timed by their UTC
+    prefix, so each is only counted by the first scan after it was logged;
+    lines without a time get fallback_timestamp. There's no
+    traceback-folding here since these sources are fetched as a short,
+    bounded tail rather than a full historical file.
 
     With structured_only, the keyword fallback is skipped and only lines in
     the structured format are kept (used for sources known to always log in
@@ -148,10 +216,12 @@ def parse_supervisor_log_text(
         if not line:
             continue
 
-        match = _LINE_RE.match(line)
+        journal_time, message = _journal_timestamp(line)
+        # Home Assistant's format, whole or after a journal prefix.
+        match = _LINE_RE.match(line) or (_LINE_RE.match(message) if journal_time else None)
         if match:
             try:
-                timestamp = datetime.strptime(match.group("ts"), _TS_FORMAT)
+                timestamp = journal_time or datetime.strptime(match.group("ts"), _TS_FORMAT)
             except ValueError:
                 timestamp = fallback_timestamp
             entries.append(
@@ -167,14 +237,12 @@ def parse_supervisor_log_text(
 
         if structured_only:
             continue
-        keyword_match = _LEVEL_KEYWORD_RE.search(line)
-        if not keyword_match:
+        level = _severity(message)
+        if level is None:
             continue
-        keyword = keyword_match.group(1).upper()
-        level = _LEVEL_ALIASES.get(keyword, keyword)
         entries.append(
             LogEntry(
-                timestamp=fallback_timestamp,
+                timestamp=journal_time or fallback_timestamp,
                 level=level,
                 logger=source_name,
                 message=line,

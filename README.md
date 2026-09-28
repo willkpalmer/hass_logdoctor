@@ -575,17 +575,27 @@ A couple of things are different for these sources compared to
   last 1000, via Supervisor's `lines` parameter - its own default without
   that is just 100), not a full history, so there's no separate "lookback
   window" for them - Log Doctor just checks the current tail every scan.
-  Repeat entries are still deduped by the same "already reported" tracking
-  as everything else, so you won't get renotified for the same ongoing
-  issue every day.
+  Journal lines (the Host log) start with the time they were logged, in
+  UTC; Log Doctor converts that to your local time and, like
+  `home-assistant.log`, only counts lines logged since the last scan, so a
+  line still in the tail isn't counted again on every scan (and restart
+  messages among them land on [Startup & shutdown](#startup--shutdown)).
+  Lines with no time of their own are counted at the scan's time. Repeat
+  entries are still deduped by the same "already reported" tracking as
+  everything else, so you won't get renotified for the same ongoing issue
+  every day.
 - Home Assistant Core's own structured `LEVEL (thread) [logger] message`
   format is only guaranteed for Core and Supervisor (which uses the same
-  logger). Host, plugin, and add-on logs can be formatted however that
-  process chooses, so Log Doctor falls back to a best-effort scan for the
-  words `ERROR`, `WARNING`, `CRITICAL`, or `FATAL` as whole words on those.
-  It's less precise than the structured parsing - occasionally a line that
-  merely mentions one of those words could be flagged - but it's the only
-  way to catch problems in logs with no fixed format. The exception is the
+  logger; recognized with or without a journal time in front). Host,
+  plugin, and add-on logs can be formatted however that process chooses,
+  so Log Doctor goes by the level a line states itself where it has one -
+  `level=warning` (containerd, Docker and other Go programs),
+  `"level": "error"` (JSON), or a leading `INFO:` / `[WARNING]` (add-ons
+  using bashio, Python) - so an info line that merely mentions "warning"
+  or "error" isn't flagged. Only lines without a level fall back to a
+  best-effort scan for the words `ERROR`, `WARNING`, `CRITICAL` or
+  `FATAL`, as standalone words: `Warning:` counts, but a name like
+  `io.containerd.warning.v1` or `error-handler` doesn't. The exception is the
   [GDrive Backup Utility](#backups) add-on (slug ending `hass_gdrive_backup`,
   or named "GDrive Backup Utility"): it always logs in the structured format
   from v0.9.0 on, so only structured lines are read from it and anything
