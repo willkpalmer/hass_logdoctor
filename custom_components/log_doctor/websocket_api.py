@@ -218,6 +218,8 @@ def websocket_investigation_prompt(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_SET_CATEGORY,
+        # Sent like every list action; only the Log review's list has categories.
+        vol.Optional("list"): vol.In(["anomalies"]),
         vol.Required("ids"): _IDS,
         vol.Required("category"): vol.In([CATEGORY_OPERATIONAL, CATEGORY_RESTART]),
     }
