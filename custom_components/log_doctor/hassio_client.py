@@ -63,6 +63,11 @@ async def async_fetch_log_text(
     Supervisor's /logs endpoints default to only the last 100 lines unless a
     "lines" query parameter is passed - without it, Log Doctor would silently
     miss anything older than that tiny tail.
+
+    "verbose" asks for journal lines with the time each was logged (in UTC)
+    in front, as the Host log always has; without it add-on, Supervisor and
+    plugin logs come as bare messages, which every scan would count again
+    at its own time.
     """
     if not supervisor_available():
         return None
@@ -71,7 +76,7 @@ async def async_fetch_log_text(
         async with session.get(
             f"{_base_url()}/{log_path}",
             headers=_headers(),
-            params={"lines": max_lines},
+            params={"lines": max_lines, "verbose": ""},
             timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             if resp.status not in (200, 206):

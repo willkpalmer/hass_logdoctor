@@ -575,12 +575,15 @@ A couple of things are different for these sources compared to
   last 1000, via Supervisor's `lines` parameter - its own default without
   that is just 100), not a full history, so there's no separate "lookback
   window" for them - Log Doctor just checks the current tail every scan.
-  Journal lines (the Host log) start with the time they were logged, in
-  UTC; Log Doctor converts that to your local time and, like
-  `home-assistant.log`, only counts lines logged since the last scan, so a
-  line still in the tail isn't counted again on every scan (and restart
-  messages among them land on [Startup & shutdown](#startup--shutdown)).
-  Lines with no time of their own are counted at the scan's time. Repeat
+  Log Doctor asks for every source's lines with the time each was logged
+  (the Supervisor's `verbose` format, in UTC), converts that to your local
+  time and, like `home-assistant.log`, only counts lines logged since the
+  last scan, so a line still in the tail isn't counted again on every scan
+  (and restart messages among them land on
+  [Startup & shutdown](#startup--shutdown)). A line that still comes with
+  no time of its own (an older Supervisor) is counted at the scan's time,
+  and never moves an entry between the Log review and Startup & shutdown,
+  since when it was really logged is unknown. Repeat
   entries are still deduped by the same "already reported" tracking as
   everything else, so you won't get renotified for the same ongoing issue
   every day.

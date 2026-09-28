@@ -119,6 +119,9 @@ class LogEntry:
     logger: str
     message: str
     raw: str = ""
+    # False when the line had no time of its own and got the scan's (see
+    # parse_supervisor_log_text): it may have been logged any time before.
+    timed: bool = True
 
 
 @dataclass
@@ -220,10 +223,11 @@ def parse_supervisor_log_text(
         # Home Assistant's format, whole or after a journal prefix.
         match = _LINE_RE.match(line) or (_LINE_RE.match(message) if journal_time else None)
         if match:
+            timed = True
             try:
                 timestamp = journal_time or datetime.strptime(match.group("ts"), _TS_FORMAT)
             except ValueError:
-                timestamp = fallback_timestamp
+                timestamp, timed = fallback_timestamp, False
             entries.append(
                 LogEntry(
                     timestamp=timestamp,
@@ -231,6 +235,7 @@ def parse_supervisor_log_text(
                     logger=f"{source_name}:{match.group('logger')}",
                     message=match.group("message"),
                     raw=line,
+                    timed=timed,
                 )
             )
             continue
@@ -245,8 +250,9 @@ def parse_supervisor_log_text(
                 timestamp=journal_time or fallback_timestamp,
                 level=level,
                 logger=source_name,
-                message=line,
+                message=message,
                 raw=line,
+                timed=journal_time is not None,
             )
         )
 

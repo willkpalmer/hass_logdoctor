@@ -119,6 +119,11 @@ class AnomalyStore(ReviewList):
         record = next((r for r in self._records if r["id"] == signature), None)
         return record is None or record.get("category") == CATEGORY_RESTART
 
+    def is_restart_category(self, signature: str) -> bool:
+        """Whether a known anomaly is on the Startup & shutdown view."""
+        record = next((r for r in self._records if r["id"] == signature), None)
+        return record is not None and record.get("category") == CATEGORY_RESTART
+
     def _apply_restarts(
         self, record: dict[str, Any], report: AnomalyReport, scanned_at: datetime
     ) -> None:

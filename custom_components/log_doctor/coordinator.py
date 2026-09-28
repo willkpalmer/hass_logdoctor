@@ -262,7 +262,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             phases: set[str] = set()
             runs: set[str] = set()
             while_running = False
+            timed = False
             for entry in report.group.entries:
+                if not entry.timed:
+                    # When it was really logged is unknown: it can't say
+                    # whether this happens at restarts or while running.
+                    continue
+                timed = True
                 found = self.restarts.phase_of(entry.timestamp)
                 if found is None:
                     while_running = True
@@ -271,9 +277,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     runs.add(found[1])
             report.phases = sorted(phases)
             report.restart_runs = sorted(runs)
-            report.restart = self.anomaly_store.is_restart_only(
-                report.signature, restart_lines_only=not while_running
-            )
+            if timed:
+                report.restart = self.anomaly_store.is_restart_only(
+                    report.signature, restart_lines_only=not while_running
+                )
+            else:
+                # Nothing to go on: it stays where it is (new ones: Log review).
+                report.restart = self.anomaly_store.is_restart_category(report.signature)
 
     @staticmethod
     def _read_previous_log_lines(path: str, since: datetime) -> list[str]:
