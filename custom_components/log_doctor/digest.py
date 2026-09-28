@@ -36,6 +36,12 @@ class AnomalyReport:
     group: AnomalyGroup
     is_new: bool
     known_issue: KnownIssue | None = None
+    # Set by the coordinator from the restart timeline (see restarts.py):
+    # whether it belongs on the Startup & shutdown view, the phases its
+    # lines were logged in and the ids of the restarts they came from.
+    restart: bool = False
+    phases: list[str] = field(default_factory=list)
+    restart_runs: list[str] = field(default_factory=list)
 
     @property
     def signature(self) -> str:
@@ -77,6 +83,17 @@ class ScanResult:
     # how many backup success lines were logged.
     backup_reports: list[AnomalyReport] = field(default_factory=list)
     backup_successes: int = 0
+    # Anomalies logged only while Home Assistant was starting or shutting
+    # down (see restarts.py), kept apart from reports.
+    restart_reports: list[AnomalyReport] = field(default_factory=list)
+    # Lines read from the end of the previous log (<log>.1), which Home
+    # Assistant starts on every restart, and its path.
+    previous_log_lines: int = 0
+    previous_log_path: str = ""
+
+    @property
+    def new_restart_reports(self) -> list[AnomalyReport]:
+        return [r for r in self.restart_reports if r.is_new]
 
     @property
     def new_backup_reports(self) -> list[AnomalyReport]:
@@ -157,6 +174,11 @@ def build_summary_section(result: ScanResult) -> str:
         f"- Home Assistant Core log: `{result.log_path}` ({_plural_lines(result.lines_scanned)})",
         f"- Window checked (Core log): {_format_since(result.since)} → {result.scanned_at.strftime('%Y-%m-%d %H:%M')}",
     ]
+    if result.previous_log_lines:
+        lines.append(
+            f"- Previous Core log, from before the last restart: `{result.previous_log_path}` "
+            f"({_plural_lines(result.previous_log_lines)} since the last scan)"
+        )
     if result.sources_checked:
         lines.append(f"- Other sources checked ({len(result.sources_checked)}):")
         for source in result.sources_checked:
@@ -174,6 +196,7 @@ def build_summary_section(result: ScanResult) -> str:
         f"- Matching log lines (WARNING+): {result.total_occurrences} across {distinct} distinct anomal{'y' if distinct == 1 else 'ies'}",
         f"- Matched to built-in knowledge base: {result.known_issue_matches}",
         f"- Backup problems (listed separately below): {len(result.backup_reports)}",
+        f"- Startup & shutdown messages (listed separately below): {len(result.restart_reports)}",
     ]
     return "\n".join(lines)
 
@@ -191,6 +214,11 @@ def build_markdown_digest(result: ScanResult) -> str:
         if result.recurring_reports:
             parts.append(f"### 🔁 Still occurring ({len(result.recurring_reports)})")
             parts.extend(_format_anomaly_block(r) for r in result.recurring_reports)
+
+    if result.restart_reports:
+        # After the operational ones, so they're investigated last.
+        parts.append(f"### 🔄 Startup & shutdown messages ({len(result.restart_reports)})")
+        parts.extend(_format_anomaly_block(r) for r in result.restart_reports)
 
     if result.backup_reports:
         # Same block format, so the investigation stage covers them too.
@@ -220,6 +248,8 @@ def build_notification_digest(result: ScanResult) -> str:
     ]
     if result.new_backup_reports:
         parts.append(f"### 💾 New backup problems: {len(result.new_backup_reports)}")
+    if result.new_restart_reports:
+        parts.append(f"### 🔄 New startup/shutdown messages: {len(result.new_restart_reports)}")
     return "\n\n".join(parts)
 
 
@@ -247,6 +277,9 @@ def build_scan_summary(result: ScanResult) -> dict[str, Any]:
         "backup_problems": len(result.backup_reports),
         "new_backup_problems": len(result.new_backup_reports),
         "backup_successes": result.backup_successes,
+        "restart_messages": len(result.restart_reports),
+        "new_restart_messages": len(result.new_restart_reports),
+        "previous_log_lines": result.previous_log_lines,
         "report_file": result.report_file,
     }
 
@@ -255,12 +288,20 @@ def build_mobile_summary(result: ScanResult) -> tuple[str, str]:
     """Build a short (title, message) pair suitable for a mobile push notification."""
     backups = len(result.new_backup_reports)
     backup_note = f" {backups} new backup problem{'' if backups == 1 else 's'}." if backups else ""
+    restarts = len(result.new_restart_reports)
+    if restarts:
+        backup_note += f" {restarts} new startup/shutdown message{'' if restarts == 1 else 's'}."
     if not result.reports:
         if backups:
             top = result.new_backup_reports[0]
             return (
                 f"Log Doctor: {backups} backup problem{'' if backups == 1 else 's'}",
                 f"Top: {top.group.logger} - {top.group.example_message[:120]}",
+            )
+        if restarts:
+            return (
+                f"Log Doctor: {restarts} startup/shutdown message{'' if restarts == 1 else 's'}",
+                backup_note.strip(),
             )
         return (
             "Log Doctor: all clear",

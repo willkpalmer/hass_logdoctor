@@ -4,6 +4,9 @@
 // with five views. Four are reviewable lists with Open and Archived tabs:
 //
 //   #logs      Log review - the anomalies the daily scans reported
+//   #restarts  Startup & shutdown - the anomalies logged only while Home
+//              Assistant was starting or shutting down (the same list as
+//              the Log review, split by each entry's category)
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
 //   #health    Devices & integrations - offline devices, unavailable
@@ -35,6 +38,7 @@ const WS = {
   CLEAR_ARCHIVED: "log_doctor/review/clear_archived",
   IGNORE: "log_doctor/review/ignore",
   UNIGNORE: "log_doctor/review/unignore",
+  SET_CATEGORY: "log_doctor/review/set_category",
   INVESTIGATION_PROMPT: "log_doctor/review/investigation_prompt",
 };
 
@@ -168,6 +172,8 @@ a:hover { text-decoration: underline; }
 .chip.failed, .chip.error { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.running { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.phase { background: rgba(127, 127, 127, 0.15); color: var(--secondary-text-color, #727272); }
 .chip.recurred { background: rgba(3, 169, 244, 0.15); color: var(--primary-color, #03a9f4); }
 .chip.known, .chip.recovered, .chip.success { background: rgba(76, 175, 80, 0.15); color: var(--success-color, #43a047); }
 .chip.offline, .chip.integration { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
@@ -225,6 +231,7 @@ const TEMPLATE = `
 <div class="content">
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
+    <button class="view" data-view="restarts">Startup &amp; shutdown <span class="count" data-count="restarts"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
     <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
     <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
@@ -241,8 +248,12 @@ const TEMPLATE = `
       <input type="search" data-el="filter">
       <select data-el="kind" title="Show"></select>
       <span class="spacer"></span>
-      <button class="action secondary" data-action="copy-prompt" data-only-view="logs" disabled
+      <button class="action secondary" data-action="copy-prompt" data-only-view="logs restarts" disabled
         title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
+      <button class="action secondary" data-action="to-restarts" data-only-view="logs" disabled
+        title="These only happen when Home Assistant starts or stops: move them to Startup &amp; shutdown">Move to Startup &amp; shutdown</button>
+      <button class="action secondary" data-action="to-operational" data-only-view="restarts" disabled
+        title="Move these to the Log review">Move to Log review</button>
       <button class="action secondary" data-action="toggle-groups" data-only-view="health"
         title="Collapse or expand every integration">Collapse all</button>
       <button class="action secondary" data-action="ignore" data-show="open archived" data-ignorable disabled
@@ -278,6 +289,15 @@ const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
 const OTHER_GROUP = "Other";
 // Where the collapsed groups of each view are remembered, per browser.
 const COLLAPSED_KEY = "log_doctor.collapsed_groups";
+
+// "Startup", "Shutdown" or "Startup & shutdown".
+function phaseLabel(r) {
+  const phases = r.phases || [];
+  const names = [];
+  if (phases.includes("startup")) names.push("Startup");
+  if (phases.includes("shutdown")) names.push("Shutdown");
+  return names.join(" & ");
+}
 
 // Successes sort below every problem level.
 function backupRank(r) {
@@ -316,6 +336,49 @@ const VIEWS = {
     tiebreak: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
     expandable: true,
     where: "the Log review",
+    // Shares the "anomalies" list with the Startup & shutdown view.
+    include: (r) => r.category !== "restart",
+  },
+  restarts: {
+    list: "anomalies",
+    include: (r) => r.category === "restart",
+    noun: ["entry", "entries"],
+    filterPlaceholder: "Filter by logger or message",
+    kinds: [
+      ["", "Everything"], ["startup", "Startup"], ["shutdown", "Shutdown"],
+      ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"],
+    ],
+    kindOf: (r) => r.level,
+    matches: (r, kind) => (kind === "startup" || kind === "shutdown" ? (r.phases || []).includes(kind) : r.level === kind),
+    search: (r) => `${r.logger} ${r.message} ${r.level} ${(r.phases || []).join(" ")}`,
+    defaultSort: { key: "last", dir: -1 },
+    empty: {
+      open: "No startup or shutdown messages. Anomalies logged only while Home Assistant starts or stops appear here.",
+      archived: "Nothing archived. Entries you mark resolved appear here.",
+      ignored: "Nothing ignored. Entries you ignore appear here, still updated by each scan.",
+    },
+    ignorable: true,
+    columns: [
+      { key: "level", label: "Level" },
+      { key: "last", label: "Last seen", firstDir: -1 },
+      { key: "phase", label: "Phase" },
+      { key: "logger", label: "Logger" },
+      { key: "message", label: "Message" },
+      { key: "restarts", label: "Restarts", num: true, firstDir: -1 },
+      { key: "count", label: "Count", num: true, firstDir: -1 },
+    ],
+    compare: {
+      level: (a, b) => (LEVEL_RANK[a.level] || 0) - (LEVEL_RANK[b.level] || 0),
+      last: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+      phase: (a, b) => phaseLabel(a).localeCompare(phaseLabel(b)),
+      logger: (a, b) => a.logger.localeCompare(b.logger, undefined, { sensitivity: "base" }),
+      message: (a, b) => a.message.localeCompare(b.message, undefined, { sensitivity: "base" }),
+      restarts: (a, b) => (a.restarts || 0) - (b.restarts || 0),
+      count: (a, b) => a.count - b.count,
+    },
+    tiebreak: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+    expandable: true,
+    where: "Startup & shutdown",
   },
   failures: {
     list: "failures",
@@ -593,7 +656,8 @@ class LogDoctorPanel extends HTMLElement {
       setTimeout(() => this._subscribe(name), 2000);
       return;
     }
-    st.records = msg.records || [];
+    const view = VIEWS[name];
+    st.records = (msg.records || []).filter((r) => !view.include || view.include(r));
     st.loaded = true;
     st.error = null;
     const ids = new Set(st.records.map((r) => r.id));
@@ -766,7 +830,8 @@ class LogDoctorPanel extends HTMLElement {
       el.hidden = !onTab || (el.dataset.ignorable !== undefined && !view.ignorable);
     }
     for (const el of this.shadowRoot.querySelectorAll("[data-only-view]")) {
-      el.hidden = el.dataset.onlyView !== this._view;
+      const shownByTab = !el.matches("[data-show], [data-ignorable]") || !el.hidden;
+      el.hidden = !el.dataset.onlyView.split(" ").includes(this._view) || !shownByTab;
     }
 
     const rows = this._visible();
@@ -852,7 +917,7 @@ class LogDoctorPanel extends HTMLElement {
       cb.checked = st.selected.has(r.id);
       tdCheck.appendChild(cb);
       tr.appendChild(tdCheck);
-      if (this._view === "logs") this._logCells(tr, r);
+      if (this._view === "logs" || this._view === "restarts") this._logCells(tr, r);
       else if (this._view === "backups") this._backupCells(tr, r);
       else if (this._view === "health") this._healthCells(tr, r);
       else this._failureCells(tr, r);
@@ -878,7 +943,7 @@ class LogDoctorPanel extends HTMLElement {
       }
       frag.appendChild(tr);
       if (view.expandable && st.expanded.has(r.id)) {
-        frag.appendChild(this._view === "logs" || this._view === "backups"
+        frag.appendChild(this._view === "logs" || this._view === "backups" || this._view === "restarts"
           ? this._logDetails(r, columns.length + 1)
           : this._healthDetails(r, columns.length + 1));
       }
@@ -914,6 +979,9 @@ class LogDoctorPanel extends HTMLElement {
     const allCollapsed = groupNames.length > 0 && groupNames.every((g) => st.collapsed.has(g));
     groupsBtn.disabled = groupNames.length === 0;
     groupsBtn.textContent = allCollapsed ? "Expand all" : "Collapse all";
+    for (const action of ["to-restarts", "to-operational"]) {
+      this.shadowRoot.querySelector(`[data-action="${action}"]`).disabled = n === 0;
+    }
     const ignoreBtn = this.shadowRoot.querySelector('[data-action="ignore"]');
     ignoreBtn.disabled = n === 0;
     ignoreBtn.textContent = n ? `Ignore ${n}` : "Ignore";
@@ -992,6 +1060,8 @@ class LogDoctorPanel extends HTMLElement {
     return ok;
   }
 
+  // Log review and Startup & shutdown rows (the latter with Phase and
+  // Restarts too).
   _logCells(tr, r) {
     const tdLevel = this._td("", "");
     tdLevel.appendChild(this._chip(r.level.toLowerCase(), r.level));
@@ -1000,11 +1070,24 @@ class LogDoctorPanel extends HTMLElement {
       chip.title = "Logged again after it was marked resolved";
       tdLevel.appendChild(chip);
     }
+    if (r.while_running) {
+      const chip = this._chip("running", "Also while running");
+      chip.title = `Was on Startup & shutdown until it was logged while Home Assistant was running normally (scan of ${this._dateTime(r.while_running)})`;
+      tdLevel.appendChild(chip);
+    }
     tr.appendChild(tdLevel);
 
     const tdLast = this._td("", "when");
     tdLast.append(this._label("Last seen "), this._dateTime(r.last_seen));
     tr.appendChild(tdLast);
+
+    if (this._view === "restarts") {
+      const tdPhase = this._td("", "");
+      for (const phase of r.phases || []) {
+        tdPhase.appendChild(this._chip("phase", phase === "startup" ? "Startup" : "Shutdown"));
+      }
+      tr.appendChild(tdPhase);
+    }
 
     tr.appendChild(this._td(r.logger, "logger"));
 
@@ -1022,6 +1105,13 @@ class LogDoctorPanel extends HTMLElement {
     }
     tdMsg.appendChild(document.createTextNode(r.message));
     tr.appendChild(tdMsg);
+
+    if (this._view === "restarts") {
+      const tdRestarts = this._td("", "num");
+      tdRestarts.title = "How many restarts it was logged during";
+      tdRestarts.append(this._label("Restarts "), String(r.restarts || 0));
+      tr.appendChild(tdRestarts);
+    }
 
     const tdCount = this._td("", "num");
     tdCount.append(this._label("Count "), String(r.count));
@@ -1083,7 +1173,9 @@ class LogDoctorPanel extends HTMLElement {
     meta.className = "detail-meta";
     meta.textContent =
       `First seen ${this._dateTime(r.first_seen)} · last seen ${this._dateTime(r.last_seen)} · ` +
-      `${r.count} line${r.count === 1 ? "" : "s"} over ${r.scans} scan${r.scans === 1 ? "" : "s"} · signature ${r.id}`;
+      `${r.count} line${r.count === 1 ? "" : "s"} over ${r.scans} scan${r.scans === 1 ? "" : "s"}` +
+      (r.restarts ? ` · logged during ${r.restarts} restart${r.restarts === 1 ? "" : "s"}` : "") +
+      ` · signature ${r.id}`;
     box.appendChild(meta);
 
     if (r.known_issue) {
@@ -1379,6 +1471,16 @@ class LogDoctorPanel extends HTMLElement {
         }
         break;
       }
+      case "to-restarts":
+      case "to-operational": {
+        const ids = selectedIds();
+        const category = btn.dataset.action === "to-restarts" ? "restart" : "operational";
+        if (ids.length && (await this._call(WS.SET_CATEGORY, { ids, category }))) {
+          for (const id of ids) st.selected.delete(id);
+          this._render();
+        }
+        break;
+      }
       case "ignore":
       case "unignore": {
         const ids = selectedIds();
@@ -1404,7 +1506,7 @@ class LogDoctorPanel extends HTMLElement {
         break;
       }
       case "ask-clear": {
-        const count = st.records.filter((r) => r.resolved).length;
+        const count = st.records.filter((r) => tabOf(r) === "archived").length;
         const [one, many] = VIEWS[this._view].noun;
         const where = VIEWS[this._view].where;
         this._el("confirm-text").textContent =
@@ -1417,7 +1519,8 @@ class LogDoctorPanel extends HTMLElement {
         break;
       case "clear":
         this._el("confirm").classList.remove("open");
-        if (await this._call(WS.CLEAR_ARCHIVED)) {
+        // Only this view's entries: some views share a list (see include).
+        if (await this._call(WS.CLEAR_ARCHIVED, { ids: st.records.filter((r) => tabOf(r) === "archived").map((r) => r.id) })) {
           st.selected.clear();
           this._render();
         }
@@ -1456,6 +1559,7 @@ const SETTINGS_SECTIONS = [
       { key: "lookback_hours", label: "Lookback window on the first scan", type: "number", min: 1, max: 168, unit: "hours" },
       { key: "log_path", label: "Log file path", type: "text" },
       { key: "include_supervisor_logs", label: "Also check Supervisor, Host and add-on logs", help: "Home Assistant OS / Supervised only.", type: "bool" },
+      { key: "restart_grace_minutes", label: "Count as startup messages until this long after starting", type: "number", min: 0, max: 60, unit: "minutes", help: "Messages logged from Home Assistant starting until this long after it has finished starting (and while it shuts down) go on Startup & shutdown." },
       { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review, Automation failures and Backups entries are kept." },
     ],
   },
@@ -1805,6 +1909,9 @@ class LogDoctorSettings extends HTMLElement {
       rows.push(["Scanned", fmt(sum.scanned_at)]);
       rows.push(["Window checked (Core log)", `${sum.since ? fmt(sum.since) : "beginning of the retained log"} → ${fmt(sum.scanned_at)}`]);
       rows.push(["Home Assistant Core log", `${sum.log_path} (${lines(sum.lines_scanned)})`]);
+      if (sum.previous_log_lines) {
+        rows.push(["Previous Core log (before the last restart)", `${sum.log_path}.1 (${lines(sum.previous_log_lines)} since the last scan)`]);
+      }
       if (sum.sources && sum.sources.length) {
         rows.push([`Other sources checked (${sum.sources.length})`,
           sum.sources.map((src) => `${src.name}: ${src.ok ? lines(src.lines_read) : `unavailable (${src.note || "no response"})`}`)]);
@@ -1815,6 +1922,9 @@ class LogDoctorSettings extends HTMLElement {
       rows.push(["Matching log lines", `${sum.matching_lines} across ${d} distinct anomal${d === 1 ? "y" : "ies"}`]);
       rows.push(["Anomalies found", `${sum.new} new, ${sum.recurring} still occurring`]);
       rows.push(["Matched to the built-in knowledge base", String(sum.known_issue_matches)]);
+      if (sum.restart_messages !== undefined) {
+        rows.push(["Startup & shutdown messages (see that view)", `${sum.restart_messages} (${sum.new_restart_messages} new)`]);
+      }
       if (sum.backup_problems !== undefined) {
         // Scans before the Backups view didn't count these.
         rows.push(["Backups (see the Backups view)",

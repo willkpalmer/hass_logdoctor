@@ -19,7 +19,11 @@ report, never a change.
 ## What it does
 
 1. On a schedule you choose (default: daily at 08:00), it reads your
-   `home-assistant.log` file in full.
+   `home-assistant.log` file in full. Home Assistant starts a new log on
+   every restart and keeps the old one as `home-assistant.log.1`; when
+   that was written to after the last scan, the lines since then are read
+   from it too, so nothing logged between a scan and a restart (the
+   shutdown included) is missed.
 2. **On Home Assistant OS or Supervised installs**, it also checks every
    other log source shown in the dropdown on **Settings → System → Logs**
    - Supervisor, Host, DNS, Audio, CLI, Multicast, and every installed
@@ -264,8 +268,8 @@ Limits:
 A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
 works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
-(or go straight to `/log-doctor#logs`, `#failures`, `#health` or
-`#backups`); each shows how many entries are still open. The scan's
+(or go straight to `/log-doctor#logs`, `#restarts`, `#failures`, `#health`
+or `#backups`); each shows how many entries are still open. The scan's
 notification links to the Log review (and to Backups when it found new
 backup problems), and each automation failure notification to the failures
 list.
@@ -287,7 +291,7 @@ The lists work the same way:
   **Count**, when it was **Ignored** and how many times it's been logged
   **Since ignored**, with its latest log lines under ▸. Ignored entries
   never come back by themselves and aren't pruned; **Stop ignoring**
-  moves them back to the open list.
+  moves them back to the open list. (Also on Startup & shutdown.)
 - New entries appear live, without refreshing. On a phone, each entry shows
   as a card and the column names become sort buttons.
 - The view buttons, tabs, filters, buttons and column headings stay in
@@ -323,6 +327,43 @@ they're a record of each scan, while this list is what's still open.
 
 Backup warnings and errors aren't in this list - they're in
 [Backups](#backups) instead, so a failing backup is only listed once.
+Anomalies logged only while Home Assistant was starting or shutting down
+are on [Startup & shutdown](#startup--shutdown) instead.
+
+### Startup & shutdown
+
+Messages that are a direct result of Home Assistant starting or stopping -
+an integration still connecting at startup, devices unreachable while it
+shuts down - kept apart from the ones logged while it's running
+(`/log-doctor#restarts`).
+
+Log Doctor records every start and stop of Home Assistant: when it began
+starting, when it had finished starting, and when a clean shutdown began.
+A log line is a **startup** message if it was logged from the start until
+a grace period after Home Assistant finished starting (**3 minutes** by
+default, set in [Settings](#settings)), and a **shutdown** message if it
+was logged after a shutdown began (including the lines only in the
+previous log file). Everything else was logged while running.
+
+- A new anomaly whose lines were **all** logged during startups or
+  shutdowns goes here instead of the Log review.
+- If one of these is later logged while Home Assistant is running
+  normally, it moves to the Log review, marked **Also while running**, so
+  a real fault that also shows at startup isn't hidden. Anomalies never
+  move this way by themselves the other way round.
+- **Move to Startup & shutdown** (on the Log review) and **Move to Log
+  review** (here) move selected entries by hand.
+- Anomalies already on the Log review before 0.29.0 stay there, and
+  classifying starts with the first restart after installing 0.29.0
+  (restarts before then weren't recorded).
+
+Columns as on the Log review plus **Phase** (Startup, Shutdown or both)
+and **Restarts** (how many restarts it was logged during); filter by phase
+or level. Open, Archived and Ignored work as on the Log review, and so does
+**Copy investigation prompt**. New ones are counted on one line of the
+scan's notification ("New startup/shutdown messages: 2"), with a link
+here, and listed in the scan's report file after the others (so the
+investigation stage gets to them last).
 
 ### Automation failures
 
@@ -451,7 +492,9 @@ Every setting from the integration's **Configure** dialog, plus what its
 entities do, on one page (`/log-doctor#settings`):
 
 - **Daily scan** - scan time, minimum severity, first-scan lookback, log
-  file path, Supervisor/Host/add-on logs, and how long reports and list
+  file path, Supervisor/Host/add-on logs, the startup grace period (how
+  long after starting messages still count as startup messages, for
+  [Startup & shutdown](#startup--shutdown)), and how long reports and list
   entries are kept.
 - **Automations & scripts** - failure alerts, missed-schedule alerts, and
   which time patterns to skip.

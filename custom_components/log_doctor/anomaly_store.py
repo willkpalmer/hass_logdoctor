@@ -6,7 +6,8 @@ message (see log_parser.py) - updated after every scan:
 
     {"id" (= signature), "level", "logger", "message", "count", "scans",
      "first_seen", "last_seen", "last_scan", "samples", "known_issue",
-     "resolved", "recurred", "ignored", "ignored_count"}
+     "resolved", "recurred", "ignored", "ignored_count", "category",
+     "phases", "restarts", "restart_runs", "while_running"}
 
 - count is the total number of matching log lines across all scans (each
   scan only counts lines since the previous one), scans how many scans
@@ -22,6 +23,22 @@ message (see log_parser.py) - updated after every scan:
   lines logged since it was ignored, but it never goes back to the open
   list by itself; stopping ignoring it does. Ignored anomalies aren't
   pruned, so one that's quiet for a while isn't reported as new again.
+
+category splits the list between two panel views (see restarts.py):
+"operational" (the Log review; also records from before 0.29.0, which have
+none) and "restart" (the Startup & shutdown view):
+
+- A new anomaly whose lines were all logged during a startup or shutdown
+  is a "restart" one; otherwise it's "operational".
+- A "restart" anomaly logged again while Home Assistant was running
+  normally becomes "operational", with while_running set to when, so the
+  panel can mark it. An operational one never moves the other way by
+  itself.
+- The panel can move anomalies either way by hand (async_set_category).
+- phases are the phases it was logged in ("startup", "shutdown"),
+  restarts how many restarts it was logged during, and restart_runs the
+  latest of those restarts' ids, so one split across two scans is only
+  counted once.
 
 Backup messages are left out; they're on the Backups view instead (see
 backup_store.py).
@@ -45,6 +62,11 @@ if TYPE_CHECKING:
 # (a line can carry a whole traceback).
 MAX_SAMPLES = 5
 MAX_SAMPLE_CHARS = 4000
+# Restart ids remembered per anomaly (see _apply_restarts).
+MAX_RESTART_RUNS = 20
+
+CATEGORY_OPERATIONAL = "operational"
+CATEGORY_RESTART = "restart"
 
 
 class AnomalyStore(ReviewList):
@@ -78,9 +100,57 @@ class AnomalyStore(ReviewList):
             return
         by_id = {record["id"]: record for record in self._records}
         for report in reports:
-            self._upsert_group(by_id, report.group, scanned_at, known_issue=report.known_issue)
+            record = self._upsert_group(
+                by_id, report.group, scanned_at, known_issue=report.known_issue
+            )
+            self._apply_restarts(record, report, scanned_at)
         self.async_trim()
         self.async_changed()
+
+    def is_restart_only(self, signature: str, restart_lines_only: bool) -> bool:
+        """Whether a scan's anomaly belongs on the Startup & shutdown view.
+
+        restart_lines_only: all its lines this scan were logged during a
+        startup or shutdown. A known anomaly keeps its category unless
+        it's now been logged while running.
+        """
+        if not restart_lines_only:
+            return False
+        record = next((r for r in self._records if r["id"] == signature), None)
+        return record is None or record.get("category") == CATEGORY_RESTART
+
+    def _apply_restarts(
+        self, record: dict[str, Any], report: AnomalyReport, scanned_at: datetime
+    ) -> None:
+        if report.restart:
+            record["category"] = CATEGORY_RESTART
+        else:
+            if record.get("category") == CATEGORY_RESTART:
+                # Logged while running: it isn't just a restart message.
+                record["while_running"] = self._to_utc(scanned_at, scanned_at)
+            record["category"] = CATEGORY_OPERATIONAL
+        if report.phases:
+            record["phases"] = sorted(set(record.get("phases") or []) | set(report.phases))
+        runs = list(record.get("restart_runs") or [])
+        for run in report.restart_runs:
+            if run not in runs:
+                runs.append(run)
+                record["restarts"] = record.get("restarts", 0) + 1
+        if runs:
+            record["restart_runs"] = runs[-MAX_RESTART_RUNS:]
+
+    async def async_set_category(self, ids: list[str], category: str) -> int:
+        """Move records between the Log review and Startup & shutdown views."""
+        wanted = set(ids)
+        count = 0
+        for record in self._records:
+            if record["id"] in wanted and record.get("category", CATEGORY_OPERATIONAL) != category:
+                record["category"] = category
+                record.pop("while_running", None)
+                count += 1
+        if count:
+            self.async_changed()
+        return count
 
     def _upsert_group(
         self,
@@ -162,6 +232,7 @@ class AnomalyStore(ReviewList):
         for record in self._records:
             if record["id"] in wanted and record.get("resolved"):
                 record["recurred"] = False
+                record.pop("while_running", None)
         return count
 
     async def async_ignore(self, ids: list[str]) -> int:

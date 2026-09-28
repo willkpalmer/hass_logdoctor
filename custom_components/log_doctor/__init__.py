@@ -7,7 +7,8 @@ reports. Separately, it watches every automation run in real time and
 posts a persistent notification whenever one fails (see
 automation_monitor.py), and after each restart reports any time-scheduled
 automation runs missed while Home Assistant was offline (see
-missed_schedules.py). Backup problems and successes - Home Assistant's own
+missed_schedules.py). Log messages from Home Assistant starting or shutting
+down are kept apart on a Startup & shutdown view (see restarts.py). Backup problems and successes - Home Assistant's own
 and the GDrive Backup Utility add-on's - are kept apart from the rest on a
 Backups view (see backups.py, backup_store.py, backup_monitor.py). When an
 OpenAI API key is configured and the "Auto-investigate" switch is on (see
@@ -38,6 +39,8 @@ from .const import (
     CONF_MAX_INVESTIGATED,
     CONF_MIN_SEVERITY,
     CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
+    CONF_RESTART_GRACE_MINUTES,
+    DEFAULT_RESTART_GRACE_MINUTES,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -78,6 +81,7 @@ from .health_store import HealthStore
 from .failure_store import FailureStore
 from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
+from .restarts import RestartTracker
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -147,9 +151,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if mobile_notify:
         mobile_notify = mobile_notify.removeprefix("notify.")
 
+    log_path = options.get(CONF_LOG_PATH) or hass.config.path("home-assistant.log")
+    # Home Assistant's starts and stops, to tell startup and shutdown
+    # messages apart from the rest.
+    restarts = RestartTracker(
+        hass,
+        log_path=log_path,
+        grace=timedelta(
+            minutes=int(options.get(CONF_RESTART_GRACE_MINUTES, DEFAULT_RESTART_GRACE_MINUTES))
+        ),
+    )
+    await restarts.async_start()
+    entry.async_on_unload(restarts.async_stop)
+
     coordinator = LogDoctorCoordinator(
         hass,
-        log_path=options.get(CONF_LOG_PATH) or hass.config.path("home-assistant.log"),
+        log_path=log_path,
         lookback_hours=options.get(CONF_LOOKBACK_HOURS, DEFAULT_LOOKBACK_HOURS),
         min_severity=options.get(CONF_MIN_SEVERITY, DEFAULT_MIN_SEVERITY),
         mobile_notify_service=mobile_notify,
@@ -168,6 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         anomaly_store=anomaly_store,
         health_store=health_store,
         backup_store=backup_store,
+        restarts=restarts,
     )
 
     hass.data.setdefault(DOMAIN, {})

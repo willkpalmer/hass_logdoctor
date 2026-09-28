@@ -43,6 +43,10 @@ DEFAULT_MONITOR_MISSED_SCHEDULES = True
 # covering quarter-hourly, hourly and less frequent schedules.
 CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES = "missed_schedule_min_pattern_minutes"
 DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES = 15
+# How long after Home Assistant has finished starting its log messages
+# still count as startup messages (see restarts.py).
+CONF_RESTART_GRACE_MINUTES = "restart_grace_minutes"
+DEFAULT_RESTART_GRACE_MINUTES = 3
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -84,6 +88,7 @@ PANEL_MODULE_FILE = "log-doctor-panel.js"
 PANEL_LOGS_URL = f"/{PANEL_URL_PATH}#logs"
 PANEL_FAILURES_URL = f"/{PANEL_URL_PATH}#failures"
 PANEL_BACKUPS_URL = f"/{PANEL_URL_PATH}#backups"
+PANEL_RESTARTS_URL = f"/{PANEL_URL_PATH}#restarts"
 # 0.17.0's standalone "Automation failures" panel. Still registered (hidden
 # from the sidebar) so old notification links keep working; it opens the
 # same panel on the failures view.

@@ -1,9 +1,18 @@
 """The scan engine that ties log parsing together with the built-in
 knowledge base, and (optionally) triggers the investigation stage.
+
+Home Assistant starts a new log file on every start, moving the old one to
+<log>.1, so when the previous log was written to after the last scan, the
+lines since that scan are read from it too - otherwise everything logged
+between the last scan and a restart, the shutdown included, would be
+missed. Anomalies logged only while Home Assistant was starting or shutting
+down (see restarts.py) are kept apart from the rest, for the panel's
+Startup & shutdown view.
 """
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -19,6 +28,7 @@ from .const import (
     NOTIFICATION_ID_INVESTIGATION,
     PANEL_BACKUPS_URL,
     PANEL_LOGS_URL,
+    PANEL_RESTARTS_URL,
 )
 from .digest import (
     AnomalyReport,
@@ -44,6 +54,7 @@ from .backups import is_backup_success, is_gdrive_addon, split_backup_entries
 from .failure_store import FailureStore
 from .health_store import HealthStore
 from .report_files import async_write_report
+from .restarts import RestartTracker
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,6 +84,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         anomaly_store: AnomalyStore | None = None,
         health_store: HealthStore | None = None,
         backup_store: BackupStore | None = None,
+        restarts: RestartTracker | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -89,6 +101,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.anomaly_store = anomaly_store
         self.health_store = health_store
         self.backup_store = backup_store
+        self.restarts = restarts
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -102,6 +115,19 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         entries = parse_log_lines(lines)
         since = self.store.data.last_scan or (now - timedelta(hours=self.lookback_hours))
+
+        previous_path = f"{self.log_path}.1"
+        previous_lines = await self.hass.async_add_executor_job(
+            self._read_previous_log_lines, previous_path, since
+        )
+        if previous_lines:
+            # Only what the current log doesn't have.
+            cutoff = entries[0].timestamp if entries else None
+            entries = [
+                entry
+                for entry in parse_log_lines(previous_lines)
+                if cutoff is None or entry.timestamp < cutoff
+            ] + entries
 
         sources_checked: list[LogSourceSummary] = []
         if self.include_supervisor_logs and supervisor_available():
@@ -137,6 +163,9 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         entries, backup_entries = split_backup_entries(entries)
 
         reports = self._reports(filter_and_group(entries, self.min_severity, since), now)
+        self._classify_restarts(reports)
+        restart_reports = [report for report in reports if report.restart]
+        reports = [report for report in reports if not report.restart]
         backup_reports: list[tuple[str, AnomalyReport]] = []
         backup_successes: list[tuple[str, AnomalyGroup]] = []
         for source, source_entries in backup_entries.items():
@@ -161,6 +190,9 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             sources_checked=sources_checked,
             backup_reports=[report for _source, report in backup_reports],
             backup_successes=sum(group.count for _source, group in backup_successes),
+            restart_reports=restart_reports,
+            previous_log_lines=len(previous_lines),
+            previous_log_path=previous_path,
         )
         result.report_markdown = build_markdown_digest(result)
         result.report_file = await async_write_report(
@@ -169,7 +201,9 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         if self.anomaly_store is not None:
             # Feeds the Log review view of the sidebar panel.
             try:
-                await self.anomaly_store.async_record_scan(result.reports, now)
+                await self.anomaly_store.async_record_scan(
+                    result.reports + result.restart_reports, now
+                )
                 await self.anomaly_store.async_prune(self.report_retention_days)
             except Exception:  # noqa: BLE001 - never let the review list break the scan
                 _LOGGER.exception("Could not update the Log review list")
@@ -197,7 +231,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         if (
             self.openai_api_key
             and self.store.data.auto_investigate
-            and result.reports
+            and (result.reports or result.restart_reports)
             and result.report_file
         ):
             self.hass.async_create_task(self._async_investigate(result))
@@ -220,6 +254,38 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         )
         return reports
 
+    def _classify_restarts(self, reports: list[AnomalyReport]) -> None:
+        """Mark the anomalies that belong on the Startup & shutdown view."""
+        if self.restarts is None or self.anomaly_store is None:
+            return
+        for report in reports:
+            phases: set[str] = set()
+            runs: set[str] = set()
+            while_running = False
+            for entry in report.group.entries:
+                found = self.restarts.phase_of(entry.timestamp)
+                if found is None:
+                    while_running = True
+                else:
+                    phases.add(found[0])
+                    runs.add(found[1])
+            report.phases = sorted(phases)
+            report.restart_runs = sorted(runs)
+            report.restart = self.anomaly_store.is_restart_only(
+                report.signature, restart_lines_only=not while_running
+            )
+
+    @staticmethod
+    def _read_previous_log_lines(path: str, since: datetime) -> list[str]:
+        """The previous log's lines, if it was written to after `since`."""
+        try:
+            if datetime.fromtimestamp(os.path.getmtime(path)) < since:
+                return []
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                return handle.readlines()
+        except OSError:
+            return []
+
     def _read_log_lines(self) -> list[str]:
         try:
             with open(self.log_path, "r", encoding="utf-8", errors="replace") as handle:
@@ -231,7 +297,11 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
     async def _async_notify(self, result: ScanResult) -> None:
         # Only speak up when there's something new; the scan summary is on
         # the Log Doctor panel's Settings page after every scan either way.
-        if not result.new_reports and not result.new_backup_reports:
+        if (
+            not result.new_reports
+            and not result.new_backup_reports
+            and not result.new_restart_reports
+        ):
             return
 
         title = f"Log Doctor Report - {result.scanned_at.strftime('%Y-%m-%d %H:%M')}"
@@ -240,6 +310,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             message += f"\n\n[Review, archive and clear these in Log Doctor]({PANEL_LOGS_URL})"
         if self.backup_store is not None and result.new_backup_reports:
             message += f"\n\n[See the backup problems in Log Doctor]({PANEL_BACKUPS_URL})"
+        if self.anomaly_store is not None and result.new_restart_reports:
+            message += f"\n\n[See the startup and shutdown messages in Log Doctor]({PANEL_RESTARTS_URL})"
 
         await self.hass.services.async_call(
             "persistent_notification",

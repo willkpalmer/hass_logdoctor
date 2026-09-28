@@ -97,10 +97,15 @@ class ReviewList:
             self.async_changed()
         return count
 
-    async def async_clear_archived(self) -> int:
-        """Delete every archived record for good."""
+    async def async_clear_archived(self, ids: list[str] | None = None) -> int:
+        """Delete archived records for good: every one, or those in ids."""
+        wanted = set(ids) if ids is not None else None
         before = len(self._records)
-        self._records = [r for r in self._records if not r.get("resolved")]
+        self._records = [
+            r
+            for r in self._records
+            if not r.get("resolved") or (wanted is not None and r["id"] not in wanted)
+        ]
         removed = before - len(self._records)
         if removed:
             self.async_changed()

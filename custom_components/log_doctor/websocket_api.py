@@ -12,6 +12,9 @@ log_doctor/review/ignore and log_doctor/review/unignore move entries of the
 lists that support it ("anomalies" and "backups") to and from their
 Ignored tab.
 
+log_doctor/review/set_category moves Log review entries between the Log
+review ("operational") and Startup & shutdown ("restart") views.
+
 log_doctor/review/investigation_prompt builds, for selected Log review
 entries, the prompt the investigation stage would send (see
 investigation.py), for the panel to copy to the clipboard.
@@ -31,6 +34,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from . import settings_api
+from .anomaly_store import CATEGORY_OPERATIONAL, CATEGORY_RESTART, AnomalyStore
 from .investigation import anomaly_from_record, build_copy_prompt
 from .const import (
     DATA_ANOMALY_STORE,
@@ -47,6 +51,7 @@ WS_CLEAR_ARCHIVED = "log_doctor/review/clear_archived"
 WS_INVESTIGATION_PROMPT = "log_doctor/review/investigation_prompt"
 WS_IGNORE = "log_doctor/review/ignore"
 WS_UNIGNORE = "log_doctor/review/unignore"
+WS_SET_CATEGORY = "log_doctor/review/set_category"
 
 _LISTS = {
     "anomalies": DATA_ANOMALY_STORE,
@@ -68,6 +73,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_investigation_prompt)
     websocket_api.async_register_command(hass, websocket_ignore)
     websocket_api.async_register_command(hass, websocket_unignore)
+    websocket_api.async_register_command(hass, websocket_set_category)
 
 
 def _get_list(
@@ -166,14 +172,23 @@ async def websocket_unignore(
 
 
 @websocket_api.require_admin
-@websocket_api.websocket_command({vol.Required("type"): WS_CLEAR_ARCHIVED, vol.Required("list"): _LIST})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_CLEAR_ARCHIVED,
+        vol.Required("list"): _LIST,
+        # Only these (views sharing a list clear just their own entries).
+        vol.Optional("ids"): _IDS,
+    }
+)
 @websocket_api.async_response
 async def websocket_clear_archived(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     if (review_list := _get_list(hass, connection, msg)) is None:
         return
-    connection.send_result(msg["id"], {"count": await review_list.async_clear_archived()})
+    connection.send_result(
+        msg["id"], {"count": await review_list.async_clear_archived(msg.get("ids"))}
+    )
 
 
 @websocket_api.require_admin
@@ -196,4 +211,25 @@ def websocket_investigation_prompt(
         return
     connection.send_result(
         msg["id"], {"prompt": build_copy_prompt(anomalies), "count": len(anomalies)}
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_SET_CATEGORY,
+        vol.Required("ids"): _IDS,
+        vol.Required("category"): vol.In([CATEGORY_OPERATIONAL, CATEGORY_RESTART]),
+    }
+)
+@websocket_api.async_response
+async def websocket_set_category(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    store: AnomalyStore | None = hass.data.get(DATA_ANOMALY_STORE)
+    if store is None:
+        connection.send_error(msg["id"], "not_loaded", "WP Log Doctor isn't loaded")
+        return
+    connection.send_result(
+        msg["id"], {"count": await store.async_set_category(msg["ids"], msg["category"])}
     )
