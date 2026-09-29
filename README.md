@@ -414,6 +414,17 @@ helper or entity) - come first, then the integrations for your devices and
 services, each alphabetically. Entries that don't belong to an integration
 are grouped under "Other", at the end.
 
+Headings of integrations with offline devices or unavailable entities have
+an **Unavailable entities ↗** link: it opens Home Assistant's **Settings →
+Entities** filtered to that integration, with "Unavailable" in the search
+box, so you can remove entities that are gone. Entities Home Assistant
+keeps only because they're registered - ones the integration no longer
+provides - are listed there as "Not provided" rather than "Unavailable";
+when there are some, a **Not provided ↗** link searches for those instead.
+(The search is passed the way Home Assistant's own pages pass one; if a
+future version of the entities page ignores it, the link still filters to
+the integration.)
+
 Click an integration's heading to collapse it (▸) or expand it again (▾);
 **Collapse all** / **Expand all** does every integration at once. Which
 integrations are collapsed is remembered in your browser. Collapsing an

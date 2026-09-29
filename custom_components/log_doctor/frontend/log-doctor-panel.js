@@ -145,6 +145,11 @@ tbody tr.group td {
 }
 tbody tr.group { cursor: pointer; user-select: none; }
 tbody tr.group .caret { display: inline-block; width: 1.2em; color: var(--secondary-text-color, #727272); }
+tbody tr.group .group-link {
+  margin-left: 12px; font-size: 12px; font-weight: 500; white-space: nowrap;
+  padding: 1px 8px; border: 1px solid var(--primary-color, #03a9f4); border-radius: 10px;
+}
+tbody tr.group .group-link:hover { text-decoration: none; background: rgba(3, 169, 244, 0.1); }
 tbody tr.group .group-count { font-weight: 400; color: var(--secondary-text-color, #727272); }
 tbody tr.row.selected { background: rgba(3, 169, 244, 0.1); }
 tr.details td { border-top: 0; padding-top: 0; }
@@ -421,6 +426,9 @@ const VIEWS = {
     groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,
     // Home Assistant's own parts (automations, scripts, helpers, ...) first.
     groupRank: (r) => (r.integration_core ? 0 : 1),
+    // Links on each integration's heading to its unavailable entities on
+    // Home Assistant's entities page (see _groupLinks).
+    groupLinks: true,
     defaultSort: { key: "since", dir: -1 },
     empty: {
       open: "No device or integration problems. 🎉",
@@ -900,6 +908,7 @@ class LogDoctorPanel extends HTMLElement {
         count.className = "group-count";
         count.textContent = ` (${groupSizes.get(lastGroup)})`;
         td.appendChild(count);
+        if (view.groupLinks) td.append(...this._groupLinks(rows.filter((g) => view.groupBy(g) === lastGroup)));
         trGroup.appendChild(td);
         frag.appendChild(trGroup);
       }
@@ -1058,6 +1067,38 @@ class LogDoctorPanel extends HTMLElement {
     try { ok = document.execCommand("copy"); } catch (_err) { ok = false; }
     ta.remove();
     return ok;
+  }
+
+  // Links from an integration's heading to Home Assistant's entities page,
+  // filtered to that integration (its ?domain= parameter) with the status
+  // typed into the search box: the page takes that from the history
+  // state's "filter" when opened with a filter in the URL, and the Status
+  // column is searchable. Entities no longer provided show as "Not
+  // provided" there rather than "Unavailable", and the search box holds
+  // one term, so they get a link of their own.
+  _groupLinks(groupRows) {
+    const domain = groupRows.find((r) => r.integration)?.integration;
+    const entityRows = groupRows.filter((r) => (r.kind === "offline" || r.kind === "unavailable") && (r.entities || []).length);
+    if (!domain || !entityRows.length) return [];
+    const status = (key, fallback) =>
+      this._hass?.localize?.(`ui.panel.config.entities.picker.status.${key}`) || fallback;
+    const link = (label, search, title) => {
+      const a = document.createElement("a");
+      a.className = "group-link";
+      a.href = `/config/entities?domain=${encodeURIComponent(domain)}`;
+      a.dataset.nav = "1";
+      a.dataset.search = search;
+      a.title = title;
+      a.textContent = label;
+      return a;
+    };
+    const links = [link("Unavailable entities ↗", status("unavailable", "Unavailable"),
+      "Open Settings → Entities for this integration, searching for unavailable entities")];
+    if (entityRows.some((r) => (r.detail || "").includes("no longer provided"))) {
+      links.push(link("Not provided ↗", status("not_provided", "Not provided"),
+        "Open Settings → Entities for this integration, searching for entities it no longer provides"));
+    }
+    return links;
   }
 
   // Log review and Startup & shutdown rows (the latter with Phase and
@@ -1379,7 +1420,8 @@ class LogDoctorPanel extends HTMLElement {
     const link = find("nav");
     if (link) {
       ev.preventDefault();
-      history.pushState(null, "", link.getAttribute("href"));
+      // A search for the page opened (see _groupLinks).
+      history.pushState(link.dataset.search ? { filter: link.dataset.search } : null, "", link.getAttribute("href"));
       window.dispatchEvent(new CustomEvent("location-changed"));
       return;
     }
