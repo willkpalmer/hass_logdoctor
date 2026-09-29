@@ -1459,12 +1459,22 @@ class LogDoctorPanel extends HTMLElement {
     box.appendChild(h);
     const ul = document.createElement("ul");
     ul.className = "entity-list";
+    // Each entry is one device's (or one entity with no device), so its
+    // entities open that device's page, where they can be removed; an
+    // entity with no device opens its own dialog (settings to remove it).
+    const deviceLink = (r.link || "").startsWith("/config/devices/device/") ? r.link : null;
     for (const entityId of r.entities || []) {
       const li = document.createElement("li");
       const a = document.createElement("a");
-      a.href = `/history?entity_id=${encodeURIComponent(entityId)}`;
-      a.dataset.nav = "1";
-      a.title = "Open its history";
+      if (deviceLink) {
+        a.href = deviceLink;
+        a.dataset.nav = "1";
+        a.title = `Open the device ${r.name}`;
+      } else {
+        a.href = "#";
+        a.dataset.moreInfo = entityId;
+        a.title = "Open this entity (its settings let you remove it)";
+      }
       a.textContent = entityId;
       li.appendChild(a);
       ul.appendChild(li);
@@ -1532,6 +1542,15 @@ class LogDoctorPanel extends HTMLElement {
     const find = (key) => path.find((el) => el.dataset && el.dataset[key] !== undefined);
     const st = this._st();
 
+    const moreInfo = find("moreInfo");
+    if (moreInfo) {
+      ev.preventDefault();
+      // Home Assistant's own entity dialog.
+      this.dispatchEvent(new CustomEvent("hass-more-info", {
+        detail: { entityId: moreInfo.dataset.moreInfo }, bubbles: true, composed: true,
+      }));
+      return;
+    }
     const link = find("nav");
     if (link) {
       ev.preventDefault();
