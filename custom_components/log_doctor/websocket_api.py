@@ -7,6 +7,7 @@ a "list" field:
 - "failures" - the Automation failures view (failure_store.py)
 - "health" - the Devices & integrations view (health_store.py)
 - "backups" - the Backups view (backup_store.py)
+- "restart_history" - the Restart history view (restart_history.py)
 
 log_doctor/review/ignore and log_doctor/review/unignore move entries of the
 lists that support it ("anomalies" and "backups") to and from their
@@ -41,6 +42,7 @@ from .const import (
     DATA_BACKUP_STORE,
     DATA_FAILURE_STORE,
     DATA_HEALTH_STORE,
+    DATA_RESTART_HISTORY,
 )
 from .review_list import ReviewList
 
@@ -48,6 +50,7 @@ WS_SUBSCRIBE = "log_doctor/review/subscribe"
 WS_RESOLVE = "log_doctor/review/resolve"
 WS_RESTORE = "log_doctor/review/restore"
 WS_CLEAR_ARCHIVED = "log_doctor/review/clear_archived"
+WS_DELETE = "log_doctor/review/delete"
 WS_INVESTIGATION_PROMPT = "log_doctor/review/investigation_prompt"
 WS_IGNORE = "log_doctor/review/ignore"
 WS_UNIGNORE = "log_doctor/review/unignore"
@@ -58,6 +61,7 @@ _LISTS = {
     "failures": DATA_FAILURE_STORE,
     "health": DATA_HEALTH_STORE,
     "backups": DATA_BACKUP_STORE,
+    "restart_history": DATA_RESTART_HISTORY,
 }
 _LIST = vol.In(list(_LISTS))
 _IDS = vol.All([str], vol.Length(max=100_000))
@@ -70,6 +74,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_resolve)
     websocket_api.async_register_command(hass, websocket_restore)
     websocket_api.async_register_command(hass, websocket_clear_archived)
+    websocket_api.async_register_command(hass, websocket_delete)
     websocket_api.async_register_command(hass, websocket_investigation_prompt)
     websocket_api.async_register_command(hass, websocket_ignore)
     websocket_api.async_register_command(hass, websocket_unignore)
@@ -235,3 +240,17 @@ async def websocket_set_category(
     connection.send_result(
         msg["id"], {"count": await store.async_set_category(msg["ids"], msg["category"])}
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_DELETE, vol.Required("list"): _LIST, vol.Required("ids"): _IDS}
+)
+@websocket_api.async_response
+async def websocket_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete selected archived entries for good."""
+    if (review_list := _get_list(hass, connection, msg)) is None:
+        return
+    connection.send_result(msg["id"], {"count": await review_list.async_delete(msg["ids"])})

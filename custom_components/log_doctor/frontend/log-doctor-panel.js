@@ -7,6 +7,8 @@
 //   #restarts  Startup & shutdown - the anomalies logged only while Home
 //              Assistant was starting or shutting down (the same list as
 //              the Log review, split by each entry's category)
+//   #reboots   Restart history - each Home Assistant restart's shutdown and
+//              startup times: the windows Startup & shutdown goes by
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
 //   #health    Devices & integrations - offline devices, unavailable
@@ -36,6 +38,7 @@ const WS = {
   RESOLVE: "log_doctor/review/resolve",
   RESTORE: "log_doctor/review/restore",
   CLEAR_ARCHIVED: "log_doctor/review/clear_archived",
+  DELETE: "log_doctor/review/delete",
   IGNORE: "log_doctor/review/ignore",
   UNIGNORE: "log_doctor/review/unignore",
   SET_CATEGORY: "log_doctor/review/set_category",
@@ -237,6 +240,7 @@ const TEMPLATE = `
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="restarts">Startup &amp; shutdown <span class="count" data-count="restarts"></span></button>
+    <button class="view" data-view="reboots">Restart history <span class="count" data-count="reboots"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
     <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
     <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
@@ -267,6 +271,7 @@ const TEMPLATE = `
         title="Move these back to the open list">Stop ignoring</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
+      <button class="action danger secondary" data-action="ask-delete" data-show="archived" data-only-view="reboots" disabled>Delete selected</button>
       <button class="action danger secondary" data-action="ask-clear" data-show="archived" disabled>Clear archive</button>
     </div>
     <div class="confirm" data-el="confirm">
@@ -294,6 +299,13 @@ const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
 const OTHER_GROUP = "Other";
 // Where the collapsed groups of each view are remembered, per browser.
 const COLLAPSED_KEY = "log_doctor.collapsed_groups";
+
+// How long a restart took: from the shutdown (or the start, when no
+// shutdown was recorded) until Home Assistant had finished starting.
+function rebootSeconds(r) {
+  const from = r.shutdown_start || r.starting;
+  return from && r.started ? (new Date(r.started) - new Date(from)) / 1000 : -1;
+}
 
 // "Startup", "Shutdown" or "Startup & shutdown".
 function phaseLabel(r) {
@@ -384,6 +396,42 @@ const VIEWS = {
     tiebreak: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
     expandable: true,
     where: "Startup & shutdown",
+  },
+  reboots: {
+    list: "restart_history",
+    noun: ["restart", "restarts"],
+    filterPlaceholder: "Filter by date or time",
+    kinds: [["", "Everything"], ["clean", "Clean shutdowns"], ["unclean", "No clean shutdown recorded"]],
+    kindOf: (r) => (r.shutdown_start ? "clean" : "unclean"),
+    // Filled in with the times as shown (see _onMessage).
+    search: (r) => r._text || "",
+    decorate: (r, panel) => {
+      r._text = [r.shutdown_start, r.starting, r.started, r.window_end].map((t) => panel._dateTime(t)).join(" ");
+    },
+    defaultSort: { key: "starting", dir: -1 },
+    empty: {
+      open: "No restarts recorded yet. Each Home Assistant restart since WP Log Doctor 0.29.0 appears here.",
+      archived: "Nothing archived. Restarts you archive, and older ones beyond the number kept open (see Settings), appear here.",
+    },
+    columns: [
+      { key: "shutdown", label: "Shutdown began", firstDir: -1 },
+      { key: "starting", label: "Started", firstDir: -1 },
+      { key: "started", label: "Finished starting", firstDir: -1 },
+      { key: "window", label: "Startup messages until", firstDir: -1 },
+      { key: "took", label: "Took", num: true, firstDir: -1 },
+    ],
+    compare: {
+      shutdown: (a, b) => (a.shutdown_start || "").localeCompare(b.shutdown_start || ""),
+      starting: (a, b) => (a.starting || "").localeCompare(b.starting || ""),
+      started: (a, b) => (a.started || "").localeCompare(b.started || ""),
+      window: (a, b) => (a.window_end || "").localeCompare(b.window_end || ""),
+      took: (a, b) => rebootSeconds(a) - rebootSeconds(b),
+    },
+    tiebreak: (a, b) => (a.starting || "").localeCompare(b.starting || ""),
+    expandable: false,
+    resolveLabel: "Archive",
+    archivedLabel: "Archived",
+    where: "the Restart history",
   },
   failures: {
     list: "failures",
@@ -496,6 +544,16 @@ const HEALTH_KINDS = {
 };
 
 const RESOLVED_COLUMN = { key: "resolved", label: "Resolved", firstDir: -1 };
+
+// "3m 05s" between two ISO times, or "" if either is missing.
+function duration(fromIso, toIso) {
+  if (!fromIso || !toIso) return "";
+  const seconds = Math.max(0, Math.round((new Date(toIso) - new Date(fromIso)) / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const sec = String(seconds % 60).padStart(2, "0");
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : m ? `${m}m ${sec}s` : `${seconds}s`;
+}
 const IGNORED_COLUMNS = [
   { key: "ignored", label: "Ignored", firstDir: -1 },
   { key: "ignored_count", label: "Since ignored", num: true, firstDir: -1 },
@@ -666,6 +724,7 @@ class LogDoctorPanel extends HTMLElement {
     }
     const view = VIEWS[name];
     st.records = (msg.records || []).filter((r) => !view.include || view.include(r));
+    if (view.decorate) for (const r of st.records) view.decorate(r, this);
     st.loaded = true;
     st.error = null;
     const ids = new Set(st.records.map((r) => r.id));
@@ -749,7 +808,10 @@ class LogDoctorPanel extends HTMLElement {
   _columns() {
     const cols = VIEWS[this._view].columns;
     const tab = this._st().tab;
-    if (tab === "archived") return [...cols, RESOLVED_COLUMN];
+    if (tab === "archived") {
+      const label = VIEWS[this._view].archivedLabel;
+      return [...cols, label ? { ...RESOLVED_COLUMN, label } : RESOLVED_COLUMN];
+    }
     if (tab === "ignored") return [...cols, ...IGNORED_COLUMNS];
     return cols;
   }
@@ -929,13 +991,19 @@ class LogDoctorPanel extends HTMLElement {
       if (this._view === "logs" || this._view === "restarts") this._logCells(tr, r);
       else if (this._view === "backups") this._backupCells(tr, r);
       else if (this._view === "health") this._healthCells(tr, r);
+      else if (this._view === "reboots") this._rebootCells(tr, r);
       else this._failureCells(tr, r);
       if (archived) {
         const td = this._td("", "when");
-        td.append(this._label("Resolved "));
+        td.append(this._label(`${VIEWS[this._view].archivedLabel || "Resolved"} `));
         if (r.recovered) {
           const chip = this._chip("recovered", "Cleared");
           chip.title = "Cleared up by itself";
+          td.appendChild(chip);
+        }
+        if (r.auto_archived) {
+          const chip = this._chip("phase", "Auto");
+          chip.title = "Archived automatically: more restarts than the number kept open (see Settings)";
           td.appendChild(chip);
         }
         td.append(this._dateTime(r.resolved));
@@ -979,7 +1047,13 @@ class LogDoctorPanel extends HTMLElement {
     const n = selectedVisible.length;
     const resolveBtn = this.shadowRoot.querySelector('[data-action="resolve"]');
     resolveBtn.disabled = n === 0;
-    resolveBtn.textContent = n ? `Mark ${n} resolved` : "Mark resolved";
+    const resolveLabel = view.resolveLabel;
+    resolveBtn.textContent = resolveLabel
+      ? (n ? `${resolveLabel} ${n}` : resolveLabel)
+      : (n ? `Mark ${n} resolved` : "Mark resolved");
+    const deleteBtn = this.shadowRoot.querySelector('[data-action="ask-delete"]');
+    deleteBtn.disabled = n === 0;
+    deleteBtn.textContent = n ? `Delete ${n}` : "Delete selected";
     const restoreBtn = this.shadowRoot.querySelector('[data-action="restore"]');
     restoreBtn.disabled = n === 0;
     restoreBtn.textContent = n ? `Restore ${n} to open` : "Restore to open";
@@ -1099,6 +1173,47 @@ class LogDoctorPanel extends HTMLElement {
         "Open Settings → Entities for this integration, searching for entities it no longer provides"));
     }
     return links;
+  }
+
+  // Restart history rows: one restart's shutdown and startup windows.
+  _rebootCells(tr, r) {
+    const tdShutdown = this._td("", "when");
+    tdShutdown.append(this._label("Shutdown began "));
+    if (r.shutdown_start) {
+      tdShutdown.append(this._dateTime(r.shutdown_start));
+    } else {
+      const chip = this._chip("unavailable", r.unclean ? "Not clean" : "Not recorded");
+      chip.title = r.unclean
+        ? "Home Assistant didn't shut down cleanly (a crash, power cut or forced stop), so no shutdown window"
+        : "The shutdown before this start wasn't recorded (before Log Doctor recorded restarts)";
+      tdShutdown.appendChild(chip);
+    }
+    tr.appendChild(tdShutdown);
+
+    const tdStart = this._td("", "when");
+    tdStart.append(this._label("Started "), this._dateTime(r.starting));
+    if (r.current) {
+      const chip = this._chip("recovered", "Current");
+      chip.title = "Home Assistant has been running since this start";
+      chip.style.marginLeft = "6px";
+      tdStart.appendChild(chip);
+    }
+    tr.appendChild(tdStart);
+
+    const tdStarted = this._td("", "when");
+    tdStarted.append(this._label("Finished starting "),
+      r.started ? this._dateTime(r.started) : r.current ? "Still starting" : "Didn't finish starting");
+    tr.appendChild(tdStarted);
+
+    const tdWindow = this._td("", "when");
+    tdWindow.title = "Messages up to this time count as startup messages (the grace period after finishing starting, see Settings)";
+    tdWindow.append(this._label("Startup messages until "), this._dateTime(r.window_end));
+    tr.appendChild(tdWindow);
+
+    const tdTook = this._td("", "num");
+    tdTook.title = r.shutdown_start ? "From the shutdown until Home Assistant had finished starting" : "From the start until Home Assistant had finished starting";
+    tdTook.append(this._label("Took "), duration(r.shutdown_start || r.starting, r.started));
+    tr.appendChild(tdTook);
   }
 
   // Log review and Startup & shutdown rows (the latter with Phase and
@@ -1556,7 +1671,18 @@ class LogDoctorPanel extends HTMLElement {
         if (ids.length) await this._copyPrompt(btn, ids);
         break;
       }
+      case "ask-delete": {
+        const ids = selectedIds();
+        if (!ids.length) break;
+        const [one, many] = VIEWS[this._view].noun;
+        this._confirmIds = ids;
+        this._el("confirm-text").textContent =
+          `Permanently delete ${ids.length} archived ${ids.length === 1 ? one : many} from ${VIEWS[this._view].where}? This can't be undone.`;
+        this._el("confirm").classList.add("open");
+        break;
+      }
       case "ask-clear": {
+        this._confirmIds = null;
         const count = st.records.filter((r) => tabOf(r) === "archived").length;
         const [one, many] = VIEWS[this._view].noun;
         const where = VIEWS[this._view].where;
@@ -1566,16 +1692,23 @@ class LogDoctorPanel extends HTMLElement {
         break;
       }
       case "cancel-clear":
+        this._confirmIds = null;
         this._el("confirm").classList.remove("open");
         break;
-      case "clear":
+      case "clear": {
         this._el("confirm").classList.remove("open");
-        // Only this view's entries: some views share a list (see include).
-        if (await this._call(WS.CLEAR_ARCHIVED, { ids: st.records.filter((r) => tabOf(r) === "archived").map((r) => r.id) })) {
+        const ids = this._confirmIds;
+        this._confirmIds = null;
+        const ok = ids
+          ? await this._call(WS.DELETE, { ids })
+          // Only this view's entries: some views share a list (see include).
+          : await this._call(WS.CLEAR_ARCHIVED, { ids: st.records.filter((r) => tabOf(r) === "archived").map((r) => r.id) });
+        if (ok) {
           st.selected.clear();
           this._render();
         }
         break;
+      }
       default:
         break;
     }
@@ -1611,6 +1744,7 @@ const SETTINGS_SECTIONS = [
       { key: "log_path", label: "Log file path", type: "text" },
       { key: "include_supervisor_logs", label: "Also check Supervisor, Host and add-on logs", help: "Home Assistant OS / Supervised only.", type: "bool" },
       { key: "restart_grace_minutes", label: "Count as startup messages until this long after starting", type: "number", min: 0, max: 60, unit: "minutes", help: "Messages logged from Home Assistant starting until this long after it has finished starting (and while it shuts down) go on Startup & shutdown." },
+      { key: "restart_history_open_entries", label: "Restarts kept open on Restart history", type: "number", min: 1, max: 500, help: "Older ones are archived automatically." },
       { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review, Automation failures and Backups entries are kept." },
     ],
   },

@@ -47,6 +47,10 @@ DEFAULT_MISSED_SCHEDULE_MIN_PATTERN_MINUTES = 15
 # still count as startup messages (see restarts.py).
 CONF_RESTART_GRACE_MINUTES = "restart_grace_minutes"
 DEFAULT_RESTART_GRACE_MINUTES = 3
+# Restarts kept open on the panel's Restart history view; older ones are
+# archived automatically (see restart_history.py).
+CONF_RESTART_HISTORY_OPEN = "restart_history_open_entries"
+DEFAULT_RESTART_HISTORY_OPEN = 20
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -74,6 +78,7 @@ DATA_FAILURE_STORE = f"{DOMAIN}_failure_store"
 DATA_ANOMALY_STORE = f"{DOMAIN}_anomaly_store"
 DATA_HEALTH_STORE = f"{DOMAIN}_health_store"
 DATA_BACKUP_STORE = f"{DOMAIN}_backup_store"
+DATA_RESTART_HISTORY = f"{DOMAIN}_restart_history"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
 # The Log Doctor sidebar panel (see panel.py / frontend/), with a "Log

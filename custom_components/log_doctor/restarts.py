@@ -34,6 +34,7 @@ from homeassistant.core import CoreState, Event, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .restart_history import RestartHistoryStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,10 +91,21 @@ def _first_log_timestamp(path: str) -> datetime | None:
 class RestartTracker:
     """Records Home Assistant's runs and classifies log timestamps by them."""
 
-    def __init__(self, hass: HomeAssistant, *, log_path: str, grace: timedelta) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        log_path: str,
+        grace: timedelta,
+        history: RestartHistoryStore | None = None,
+        history_open_limit: int = 20,
+    ) -> None:
         self.hass = hass
         self.log_path = log_path
         self.grace = grace
+        # The panel's Restart history view, kept in step with the runs.
+        self.history = history
+        self.history_open_limit = history_open_limit
         self._store: Store[dict[str, Any]] = Store(hass, _STORAGE_VERSION, _STORAGE_KEY)
         self.runs: list[Run] = []
         # Cleared when they fire: removing a fired listener is an error.
@@ -131,6 +143,7 @@ class RestartTracker:
         self._unsub_stop = self.hass.bus.async_listen_once(
             EVENT_HOMEASSISTANT_STOP, self._async_on_stop
         )
+        await self._async_sync_history()
 
     @callback
     def async_stop(self) -> None:
@@ -145,6 +158,7 @@ class RestartTracker:
         if self.runs and self.runs[-1].started is None:
             self.runs[-1].started = datetime.now()
             await self._async_save()
+            await self._async_sync_history()
 
     async def _async_on_stop(self, _event: Event) -> None:
         # Saved straight away: nothing later in the shutdown can be relied on.
@@ -152,6 +166,15 @@ class RestartTracker:
         if self.runs and self.runs[-1].stopping is None:
             self.runs[-1].stopping = datetime.now()
             await self._async_save()
+            await self._async_sync_history()
+
+    async def _async_sync_history(self) -> None:
+        if self.history is None:
+            return
+        try:
+            await self.history.async_sync(self.runs, self.grace, self.history_open_limit)
+        except Exception:  # noqa: BLE001 - the history is only for display
+            _LOGGER.exception("Could not update the restart history")
 
     async def _async_save(self) -> None:
         await self._store.async_save(

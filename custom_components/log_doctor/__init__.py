@@ -41,6 +41,9 @@ from .const import (
     CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     CONF_RESTART_GRACE_MINUTES,
     DEFAULT_RESTART_GRACE_MINUTES,
+    CONF_RESTART_HISTORY_OPEN,
+    DEFAULT_RESTART_HISTORY_OPEN,
+    DATA_RESTART_HISTORY,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -81,6 +84,7 @@ from .health_store import HealthStore
 from .failure_store import FailureStore
 from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
+from .restart_history import RestartHistoryStore
 from .restarts import RestartTracker
 from .store import LogDoctorStore
 
@@ -152,6 +156,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         mobile_notify = mobile_notify.removeprefix("notify.")
 
     log_path = options.get(CONF_LOG_PATH) or hass.config.path("home-assistant.log")
+    # The panel's Restart history view.
+    restart_history = RestartHistoryStore(hass)
+    await restart_history.async_load()
+    hass.data[DATA_RESTART_HISTORY] = restart_history
     # Home Assistant's starts and stops, to tell startup and shutdown
     # messages apart from the rest.
     restarts = RestartTracker(
@@ -159,6 +167,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         log_path=log_path,
         grace=timedelta(
             minutes=int(options.get(CONF_RESTART_GRACE_MINUTES, DEFAULT_RESTART_GRACE_MINUTES))
+        ),
+        history=restart_history,
+        history_open_limit=int(
+            options.get(CONF_RESTART_HISTORY_OPEN, DEFAULT_RESTART_HISTORY_OPEN)
         ),
     )
     await restarts.async_start()
@@ -277,6 +289,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             DATA_ANOMALY_STORE,
             DATA_HEALTH_STORE,
             DATA_BACKUP_STORE,
+            DATA_RESTART_HISTORY,
         ):
             if (review_list := hass.data.pop(key, None)) is not None:
                 await review_list.async_shutdown()

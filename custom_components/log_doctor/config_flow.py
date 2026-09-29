@@ -36,6 +36,8 @@ from .const import (
     CONF_MISSED_SCHEDULE_MIN_PATTERN_MINUTES,
     CONF_RESTART_GRACE_MINUTES,
     DEFAULT_RESTART_GRACE_MINUTES,
+    CONF_RESTART_HISTORY_OPEN,
+    DEFAULT_RESTART_HISTORY_OPEN,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -88,6 +90,12 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 NumberSelectorConfig(
                     min=0, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"
                 )
+            ),
+            vol.Required(
+                CONF_RESTART_HISTORY_OPEN,
+                default=defaults.get(CONF_RESTART_HISTORY_OPEN, DEFAULT_RESTART_HISTORY_OPEN),
+            ): NumberSelector(
+                NumberSelectorConfig(min=1, max=500, step=1, mode=NumberSelectorMode.BOX)
             ),
             vol.Optional(
                 CONF_MOBILE_NOTIFY_SERVICE,
