@@ -1423,6 +1423,15 @@ class LogDoctorPanel extends HTMLElement {
       // A search for the page opened (see _groupLinks).
       history.pushState(link.dataset.search ? { filter: link.dataset.search } : null, "", link.getAttribute("href"));
       window.dispatchEvent(new CustomEvent("location-changed"));
+      if (link.dataset.search) {
+        // Home Assistant keeps the entities page once opened and only
+        // re-attaches it after this event, so a second visit would miss the
+        // new URL and keep the first one's filters. Tell it again once it's
+        // attached; it ignores the event if its filters already match.
+        for (const delay of [100, 500]) {
+          setTimeout(() => window.dispatchEvent(new CustomEvent("location-changed")), delay);
+        }
+      }
       return;
     }
     const viewBtn = find("view");
