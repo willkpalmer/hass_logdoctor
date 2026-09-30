@@ -1,22 +1,23 @@
 // WP Log Doctor - sidebar panel.
 //
 // A self-contained web component (no build step, no external libraries)
-// with five views. Four are reviewable lists with Open and Archived tabs:
+// with seven views, in this order. Six are reviewable lists with Open and
+// Archived tabs:
 //
 //   #logs      Log review - the anomalies the daily scans reported
 //   #restarts  Startup & shutdown - the anomalies logged only while Home
 //              Assistant was starting or shutting down (the same list as
 //              the Log review, split by each entry's category)
-//   #reboots   Restart history - each Home Assistant restart's shutdown and
-//              startup times: the windows Startup & shutdown goes by
 //   #failures  Automation failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
 //   #health    Devices & integrations - offline devices, unavailable
-//              entities, integrations
-//              that failed to load, and Repairs issues
+//              entities, integrations that failed to load, and Repairs
+//              issues
 //   #backups   Backups - backup problems and successes, from Home
 //              Assistant's own backup and the GDrive Backup Utility add-on
 //              (left out of the Log review)
+//   #reboots   Restart history - each Home Assistant restart's shutdown and
+//              startup times: the windows Startup & shutdown goes by
 //
 // and #settings holds all of WP Log Doctor's settings (see
 // LogDoctorSettings at the end of this file).
@@ -240,10 +241,10 @@ const TEMPLATE = `
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="restarts">Startup &amp; shutdown <span class="count" data-count="restarts"></span></button>
-    <button class="view" data-view="reboots">Restart history <span class="count" data-count="reboots"></span></button>
     <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
     <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
     <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
+    <button class="view" data-view="reboots">Restart history <span class="count" data-count="reboots"></span></button>
     <button class="view" data-view="settings">Settings</button>
   </div>
   <log-doctor-settings data-el="settings" hidden></log-doctor-settings>

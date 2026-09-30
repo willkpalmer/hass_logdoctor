@@ -268,8 +268,8 @@ Limits:
 A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
 works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
-(or go straight to `/log-doctor#logs`, `#restarts`, `#reboots`,
-`#failures`, `#health` or `#backups`); each shows how many entries are still open. The scan's
+(or go straight to `/log-doctor#logs`, `#restarts`, `#failures`,
+`#health`, `#backups` or `#reboots`); each shows how many entries are still open. The scan's
 notification links to the Log review (and to Backups when it found new
 backup problems), and each automation failure notification to the failures
 list.
@@ -373,38 +373,6 @@ or level. Open, Archived and Ignored work as on the Log review, and so does
 scan's notification ("New startup/shutdown messages: 2"), with a link
 here, and listed in the scan's report file after the others (so the
 investigation stage gets to them last).
-
-### Restart history
-
-Every Home Assistant restart Log Doctor has recorded (from 0.29.0 on),
-newest first, with the times [Startup & shutdown](#startup--shutdown) goes
-by (`/log-doctor#reboots`):
-
-- **Shutdown began** - when the previous run's clean shutdown began;
-  shutdown messages are those from then until the restart. **Not clean**
-  when Home Assistant didn't shut down cleanly (a crash, power cut or
-  forced stop), **Not recorded** for a shutdown before Log Doctor
-  recorded them.
-- **Started** - when Home Assistant began starting (the first line of its
-  new log). **Current** marks the run it's in now.
-- **Finished starting** - when Home Assistant reported it had started.
-- **Startup messages until** - finished starting plus the startup grace
-  period; messages up to then are startup messages.
-- **Took** - from the shutdown (or the start, if no shutdown was recorded)
-  until Home Assistant had finished starting.
-
-Filter by date or time, or to clean or unclean shutdowns. **Archive**
-moves selected restarts to the Archived tab; only the newest 20 (set in
-[Settings](#settings)) stay open, and older ones are archived
-automatically (marked **Auto**) - one you restore may be archived again
-at the next restart if it's still beyond that number. On the Archived tab,
-**Delete selected** (after a confirmation) permanently deletes the
-selected entries, and **Clear archive** all of them. Deleted entries don't
-come back.
-
-This page is a record for you: archiving or deleting entries doesn't
-change how log messages are classified, which always uses the restarts
-Log Doctor keeps internally.
 
 ### Automation failures
 
@@ -538,6 +506,38 @@ Columns: **Status** (Success or the problem's level), **Last logged**, **Last fo
 **Source** (with the logger), **Message** and **Count**; filter to
 problems, successes or one source. Click ▸ for the details and latest log
 lines.
+
+### Restart history
+
+Every Home Assistant restart Log Doctor has recorded (from 0.29.0 on),
+newest first, with the times [Startup & shutdown](#startup--shutdown) goes
+by (`/log-doctor#reboots`):
+
+- **Shutdown began** - when the previous run's clean shutdown began;
+  shutdown messages are those from then until the restart. **Not clean**
+  when Home Assistant didn't shut down cleanly (a crash, power cut or
+  forced stop), **Not recorded** for a shutdown before Log Doctor
+  recorded them.
+- **Started** - when Home Assistant began starting (the first line of its
+  new log). **Current** marks the run it's in now.
+- **Finished starting** - when Home Assistant reported it had started.
+- **Startup messages until** - finished starting plus the startup grace
+  period; messages up to then are startup messages.
+- **Took** - from the shutdown (or the start, if no shutdown was recorded)
+  until Home Assistant had finished starting.
+
+Filter by date or time, or to clean or unclean shutdowns. **Archive**
+moves selected restarts to the Archived tab; only the newest 20 (set in
+[Settings](#settings)) stay open, and older ones are archived
+automatically (marked **Auto**) - one you restore may be archived again
+at the next restart if it's still beyond that number. On the Archived tab,
+**Delete selected** (after a confirmation) permanently deletes the
+selected entries, and **Clear archive** all of them. Deleted entries don't
+come back.
+
+This page is a record for you: archiving or deleting entries doesn't
+change how log messages are classified, which always uses the restarts
+Log Doctor keeps internally.
 
 ### Settings
 
