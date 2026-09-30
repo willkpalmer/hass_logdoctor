@@ -486,6 +486,7 @@ const VIEWS = {
     empty: {
       open: "No device or integration problems. 🎉",
       archived: "Nothing archived. Problems that clear up by themselves, and ones you mark resolved, appear here.",
+      ignored: "Nothing ignored. Problems you ignore - entities that are unavailable on purpose - appear here, still checked.",
     },
     columns: [
       { key: "kind", label: "Type" },
@@ -501,6 +502,12 @@ const VIEWS = {
     },
     tiebreak: (a, b) => (a.since || "").localeCompare(b.since || ""),
     expandable: true,
+    ignorable: true,
+    // Its Ignored tab shows whether each problem is still there.
+    ignoredColumns: [
+      { key: "ignored", label: "Ignored", firstDir: -1 },
+      { key: "active", label: "Now" },
+    ],
     where: "Devices & integrations",
   },
   backups: {
@@ -819,7 +826,7 @@ class LogDoctorPanel extends HTMLElement {
       const label = VIEWS[this._view].archivedLabel;
       return [...cols, label ? { ...RESOLVED_COLUMN, label } : RESOLVED_COLUMN];
     }
-    if (tab === "ignored") return [...cols, ...IGNORED_COLUMNS];
+    if (tab === "ignored") return [...cols, ...(VIEWS[this._view].ignoredColumns || IGNORED_COLUMNS)];
     return cols;
   }
 
@@ -827,6 +834,7 @@ class LogDoctorPanel extends HTMLElement {
     const view = VIEWS[this._view];
     if (key === "resolved") return (a, b) => (a.resolved || "").localeCompare(b.resolved || "");
     if (key === "ignored") return (a, b) => (a.ignored || "").localeCompare(b.ignored || "");
+    if (key === "active") return (a, b) => Number(!!a.active) - Number(!!b.active);
     if (key === "ignored_count") return (a, b) => (a.ignored_count || 0) - (b.ignored_count || 0);
     if (this._view === "failures" && key === "time") {
       const cache = new Map();
@@ -1020,10 +1028,19 @@ class LogDoctorPanel extends HTMLElement {
         const td = this._td("", "when");
         td.append(this._label("Ignored "), this._dateTime(r.ignored));
         tr.appendChild(td);
-        const tdCount = this._td("", "num");
-        tdCount.title = "Times logged since it was ignored";
-        tdCount.append(this._label("Since ignored: "), String(r.ignored_count || 0));
-        tr.appendChild(tdCount);
+        if (this._view === "health") {
+          const tdNow = this._td("", "");
+          tdNow.appendChild(r.active
+            ? this._chip("unavailable", "Still there")
+            : this._chip("recovered", "Cleared"));
+          tdNow.title = "It stays ignored either way, unless another of its entities becomes unavailable";
+          tr.appendChild(tdNow);
+        } else {
+          const tdCount = this._td("", "num");
+          tdCount.title = "Times logged since it was ignored";
+          tdCount.append(this._label("Since ignored: "), String(r.ignored_count || 0));
+          tr.appendChild(tdCount);
+        }
       }
       frag.appendChild(tr);
       if (view.expandable && st.expanded.has(r.id)) {
@@ -1429,7 +1446,7 @@ class LogDoctorPanel extends HTMLElement {
     tdKind.appendChild(this._chip(r.kind, HEALTH_KINDS[r.kind]?.label || r.kind));
     if (r.recurred) {
       const chip = this._chip("recurred", "Recurred");
-      chip.title = "Came back after it had cleared up";
+      chip.title = "Came back after it had cleared up, or another of its entities became unavailable while it was ignored";
       tdKind.appendChild(chip);
     }
     tr.appendChild(tdKind);

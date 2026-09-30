@@ -283,7 +283,8 @@ The lists work the same way:
 - **Archived** tab: resolved entries, with when they were resolved.
   **Restore to open** moves selected ones back; **Clear archive** (after a
   confirmation) permanently deletes every archived entry.
-- **Ignored** tab (Log review and Backups only): for entries that keep
+- **Ignored** tab (all but Automation failures and Restart history; see
+  [Devices & integrations](#devices--integrations) for how it works there): for entries that keep
   coming back but aren't a problem, or that you can't do anything about.
   **Ignore** moves selected open or archived entries here so they stop
   appearing in the open list (and its count) on every scan. Scans keep
@@ -457,6 +458,15 @@ These problems end by themselves, so this list keeps up with them:
   **Open**, marked **Recurred**.
 - **Clear archive** deletes archived entries; one that's still a problem
   reappears on the next check.
+- **Ignore** moves selected problems to the **Ignored** tab - for entities
+  that are unavailable on purpose but still needed, so they don't clog up
+  the list. They keep being checked: the tab shows when each was ignored
+  and whether it's **Still there** or **Cleared**, and they stay there
+  either way (and aren't pruned). Ignoring remembers which entities were
+  unavailable at the time: if another of the device's entities becomes
+  unavailable, the entry returns to **Open**, marked **Recurred**, so a
+  new problem isn't hidden. **Stop ignoring** moves entries back to Open
+  (or to Archived, if they've cleared).
 
 Home Assistant resets every entity's "last changed" time when it restarts,
 so a device that was already offline before a restart counts from the
