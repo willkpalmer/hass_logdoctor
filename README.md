@@ -334,7 +334,9 @@ are on [Startup & shutdown](#startup--shutdown) instead.
 says it was logged (the default sort, newest first); **Last found** is when
 the scan that last found it ran, which can be much later. Some Supervisor
 log lines carry no time of their own; an entry with only those shows "—"
-under Last logged. The same two columns are on Startup & shutdown and
+under Last logged. Lines from the Supervisor's journal (Host, add-ons,
+plugins such as DNS) start with the time in UTC; under ▸ that time is
+shown in your local time, like every other time on the page. The same two columns are on Startup & shutdown and
 Backups.
 
 ### Startup & shutdown

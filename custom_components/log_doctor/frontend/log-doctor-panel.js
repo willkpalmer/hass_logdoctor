@@ -1378,7 +1378,7 @@ class LogDoctorPanel extends HTMLElement {
         : `Log lines from the latest scan that found it (${samples.length})`;
       box.appendChild(h);
       const pre = document.createElement("pre");
-      pre.textContent = samples.join("\n");
+      pre.textContent = samples.map((line) => this._localJournalTime(line)).join("\n");
       box.appendChild(pre);
     }
     td.appendChild(box);
@@ -1504,6 +1504,18 @@ class LogDoctorPanel extends HTMLElement {
     td.appendChild(box);
     tr.appendChild(td);
     return tr;
+  }
+
+  // The Supervisor's journal lines (Host, add-ons, plugins) start with the
+  // time in UTC, without saying so: "2026-09-29 02:35:25.250 host proc[1]: ".
+  // Shown in local time like every other time here. Home Assistant's own
+  // "time LEVEL (thread)" lines are already local and left alone.
+  _localJournalTime(line) {
+    const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?( \S+ [^\s:]+: )/.exec(line);
+    if (!match) return line;
+    const iso = `${match[1]}T${match[2]}${match[3] || ""}Z`;
+    if (Number.isNaN(new Date(iso).getTime())) return line;
+    return `${this._dateTime(iso)}${match[3] || ""}${match[4]}${line.slice(match[0].length)}`;
   }
 
   _td(text, cls) {
