@@ -329,7 +329,7 @@ const VIEWS = {
     kinds: [["", "All levels"], ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"]],
     kindOf: (r) => r.level,
     search: (r) => `${r.logger} ${r.message} ${r.level}`,
-    defaultSort: { key: "last", dir: -1 },
+    defaultSort: { key: "logged", dir: -1 },
     empty: {
       open: "Nothing to review. Anomalies from each scan appear here. 🎉",
       archived: "Nothing archived. Entries you mark resolved appear here.",
@@ -338,14 +338,16 @@ const VIEWS = {
     ignorable: true,
     columns: [
       { key: "level", label: "Level" },
-      { key: "last", label: "Last seen", firstDir: -1 },
+      { key: "logged", label: "Last logged", firstDir: -1 },
+      { key: "last", label: "Last found", firstDir: -1 },
       { key: "logger", label: "Logger" },
       { key: "message", label: "Message" },
       { key: "count", label: "Count", num: true, firstDir: -1 },
     ],
     compare: {
       level: (a, b) => (LEVEL_RANK[a.level] || 0) - (LEVEL_RANK[b.level] || 0),
-      last: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+      logged: (a, b) => (a.last_logged || "").localeCompare(b.last_logged || ""),
+      last: (a, b) => (a.last_scan || a.last_seen || "").localeCompare(b.last_scan || b.last_seen || ""),
       logger: (a, b) => a.logger.localeCompare(b.logger, undefined, { sensitivity: "base" }),
       message: (a, b) => a.message.localeCompare(b.message, undefined, { sensitivity: "base" }),
       count: (a, b) => a.count - b.count,
@@ -368,7 +370,7 @@ const VIEWS = {
     kindOf: (r) => r.level,
     matches: (r, kind) => (kind === "startup" || kind === "shutdown" ? (r.phases || []).includes(kind) : r.level === kind),
     search: (r) => `${r.logger} ${r.message} ${r.level} ${(r.phases || []).join(" ")}`,
-    defaultSort: { key: "last", dir: -1 },
+    defaultSort: { key: "logged", dir: -1 },
     empty: {
       open: "No startup or shutdown messages. Anomalies logged only while Home Assistant starts or stops appear here.",
       archived: "Nothing archived. Entries you mark resolved appear here.",
@@ -377,7 +379,8 @@ const VIEWS = {
     ignorable: true,
     columns: [
       { key: "level", label: "Level" },
-      { key: "last", label: "Last seen", firstDir: -1 },
+      { key: "logged", label: "Last logged", firstDir: -1 },
+      { key: "last", label: "Last found", firstDir: -1 },
       { key: "phase", label: "Phase" },
       { key: "logger", label: "Logger" },
       { key: "message", label: "Message" },
@@ -386,7 +389,8 @@ const VIEWS = {
     ],
     compare: {
       level: (a, b) => (LEVEL_RANK[a.level] || 0) - (LEVEL_RANK[b.level] || 0),
-      last: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+      logged: (a, b) => (a.last_logged || "").localeCompare(b.last_logged || ""),
+      last: (a, b) => (a.last_scan || a.last_seen || "").localeCompare(b.last_scan || b.last_seen || ""),
       phase: (a, b) => phaseLabel(a).localeCompare(phaseLabel(b)),
       logger: (a, b) => a.logger.localeCompare(b.logger, undefined, { sensitivity: "base" }),
       message: (a, b) => a.message.localeCompare(b.message, undefined, { sensitivity: "base" }),
@@ -509,7 +513,7 @@ const VIEWS = {
     kindOf: (r) => r.kind,
     matches: (r, kind) => (BACKUP_SOURCES[kind] ? r.source === kind : r.kind === kind),
     search: (r) => `${BACKUP_SOURCES[r.source] || ""} ${r.logger} ${r.message} ${r.kind === "success" ? "success" : r.level}`,
-    defaultSort: { key: "last", dir: -1 },
+    defaultSort: { key: "logged", dir: -1 },
     empty: {
       open: "No backup messages yet. Backup problems and successful backups appear here.",
       archived: "Nothing archived. Entries you mark resolved appear here.",
@@ -518,14 +522,16 @@ const VIEWS = {
     ignorable: true,
     columns: [
       { key: "status", label: "Status" },
-      { key: "last", label: "Last seen", firstDir: -1 },
+      { key: "logged", label: "Last logged", firstDir: -1 },
+      { key: "last", label: "Last found", firstDir: -1 },
       { key: "source", label: "Source" },
       { key: "message", label: "Message" },
       { key: "count", label: "Count", num: true, firstDir: -1 },
     ],
     compare: {
       status: (a, b) => backupRank(a) - backupRank(b),
-      last: (a, b) => (a.last_seen || "").localeCompare(b.last_seen || ""),
+      logged: (a, b) => (a.last_logged || "").localeCompare(b.last_logged || ""),
+      last: (a, b) => (a.last_scan || a.last_seen || "").localeCompare(b.last_scan || b.last_seen || ""),
       source: (a, b) => (BACKUP_SOURCES[a.source] || "").localeCompare(BACKUP_SOURCES[b.source] || ""),
       message: (a, b) => a.message.localeCompare(b.message, undefined, { sensitivity: "base" }),
       count: (a, b) => a.count - b.count,
@@ -1216,6 +1222,24 @@ class LogDoctorPanel extends HTMLElement {
     tr.appendChild(tdTook);
   }
 
+  // Last logged - the time the newest log line itself gives - and Last
+  // found - the scan that last found it (see anomaly_store.py).
+  _lastCells(tr, r, loggedLabel) {
+    const tdLogged = this._td("", "when");
+    tdLogged.append(this._label(loggedLabel));
+    if (r.last_logged) {
+      tdLogged.append(this._dateTime(r.last_logged));
+    } else {
+      tdLogged.append("—");
+      tdLogged.title = "Its log lines don't say when they were logged";
+    }
+    tr.appendChild(tdLogged);
+    const tdFound = this._td("", "when");
+    tdFound.append(this._label("Found "), this._dateTime(r.last_scan || r.last_seen));
+    tdFound.title = "The scan that last found it";
+    tr.appendChild(tdFound);
+  }
+
   // Log review and Startup & shutdown rows (the latter with Phase and
   // Restarts too).
   _logCells(tr, r) {
@@ -1233,9 +1257,7 @@ class LogDoctorPanel extends HTMLElement {
     }
     tr.appendChild(tdLevel);
 
-    const tdLast = this._td("", "when");
-    tdLast.append(this._label("Last seen "), this._dateTime(r.last_seen));
-    tr.appendChild(tdLast);
+    this._lastCells(tr, r, "Last logged ");
 
     if (this._view === "restarts") {
       const tdPhase = this._td("", "");
@@ -1285,9 +1307,7 @@ class LogDoctorPanel extends HTMLElement {
     }
     tr.appendChild(tdStatus);
 
-    const tdLast = this._td("", "when");
-    tdLast.append(this._label(r.kind === "success" ? "Last success " : "Last seen "), this._dateTime(r.last_seen));
-    tr.appendChild(tdLast);
+    this._lastCells(tr, r, r.kind === "success" ? "Last success " : "Last logged ");
 
     const tdSource = this._td("", "logger");
     tdSource.appendChild(document.createTextNode(BACKUP_SOURCES[r.source] || r.source || ""));
@@ -1329,6 +1349,7 @@ class LogDoctorPanel extends HTMLElement {
     meta.className = "detail-meta";
     meta.textContent =
       `First seen ${this._dateTime(r.first_seen)} · last seen ${this._dateTime(r.last_seen)} · ` +
+      (r.last_logged ? `last logged ${this._dateTime(r.last_logged)} · ` : "") +
       `${r.count} line${r.count === 1 ? "" : "s"} over ${r.scans} scan${r.scans === 1 ? "" : "s"}` +
       (r.restarts ? ` · logged during ${r.restarts} restart${r.restarts === 1 ? "" : "s"}` : "") +
       ` · signature ${r.id}`;

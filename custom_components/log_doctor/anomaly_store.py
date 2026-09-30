@@ -7,7 +7,12 @@ message (see log_parser.py) - updated after every scan:
     {"id" (= signature), "level", "logger", "message", "count", "scans",
      "first_seen", "last_seen", "last_scan", "samples", "known_issue",
      "resolved", "recurred", "ignored", "ignored_count", "category",
-     "phases", "restarts", "restart_runs", "while_running"}
+     "phases", "restarts", "restart_runs", "while_running", "last_logged"}
+
+- last_seen is the latest of its lines' times; a line without a time of
+  its own (some Supervisor sources) gets the scan's. last_logged is the
+  latest time a line itself says it was logged (None if none said), and
+  last_scan when a scan last found it.
 
 - count is the total number of matching log lines across all scans (each
   scan only counts lines since the previous one), scans how many scans
@@ -51,6 +56,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from homeassistant.util import dt as dt_util
 
 from .const import SEVERITY_ORDER
+from .log_parser import line_timestamp
 from .review_list import ReviewList
 
 if TYPE_CHECKING:
@@ -73,6 +79,20 @@ class AnomalyStore(ReviewList):
     storage_key = "log_doctor.anomalies"
     records_key = "anomalies"
     max_records = 5_000
+
+    async def async_load(self) -> dict[str, Any] | None:
+        data = await super().async_load()
+        # Records from before 0.32.0: last_logged from their kept lines.
+        filled = False
+        for record in self._records:
+            if "last_logged" in record:
+                continue
+            times = [t for raw in record.get("samples") or [] if (t := line_timestamp(raw))]
+            record["last_logged"] = self._to_utc(max(times), max(times)) if times else None
+            filled = True
+        if filled:
+            self.async_changed()
+        return data
 
     @staticmethod
     def sort_key(record: dict[str, Any]) -> str:
@@ -205,6 +225,12 @@ class AnomalyStore(ReviewList):
         record["last_seen"] = max(record["last_seen"], last_seen)
         record["last_scan"] = scan_iso
         record["message"] = group.example_message
+        logged = [entry.timestamp for entry in group.entries if entry.timed]
+        if logged:
+            newest = self._to_utc(max(logged), scanned_at)
+            record["last_logged"] = max(record.get("last_logged") or "", newest)
+        else:
+            record.setdefault("last_logged", None)
         if append_samples:
             samples = (record.get("samples", []) + samples)[-MAX_SAMPLES:]
         record["samples"] = samples

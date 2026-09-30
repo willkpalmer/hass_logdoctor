@@ -81,6 +81,25 @@ def _journal_timestamp(line: str) -> tuple[datetime | None, str]:
     return local, line[match.end():]
 
 
+# A stored raw line's own time: Home Assistant's format (and the backup
+# events' "time LEVEL [logger]" lines), local time.
+_RAW_TIME_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.\d+)? (?:DEBUG|INFO|WARNING|ERROR|CRITICAL) "
+)
+
+
+def line_timestamp(raw: str) -> datetime | None:
+    """The time a raw log line (as kept in samples) says it was logged.
+
+    Local time, naive. None for lines without a time of their own.
+    """
+    first = raw.split("\n", 1)[0]
+    if match := _RAW_TIME_RE.match(first):
+        return datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S")
+    journal_time, _message = _journal_timestamp(first)
+    return journal_time
+
+
 def _severity(message: str) -> str | None:
     """The level of a line not in Home Assistant's format, or None if it
     isn't a warning or worse."""

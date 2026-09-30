@@ -287,7 +287,7 @@ The lists work the same way:
   coming back but aren't a problem, or that you can't do anything about.
   **Ignore** moves selected open or archived entries here so they stop
   appearing in the open list (and its count) on every scan. Scans keep
-  them up to date: the tab shows each one's **Last seen**, total
+  them up to date: the tab shows each one's **Last logged**, total
   **Count**, when it was **Ignored** and how many times it's been logged
   **Since ignored**, with its latest log lines under ▸. Ignored entries
   never come back by themselves and aren't pruned; **Stop ignoring**
@@ -302,7 +302,7 @@ The lists work the same way:
 
 One entry per anomaly the daily scans report - the same grouping the scan
 reports use, so repeated occurrences of one problem are a single entry
-whose **Count** keeps growing. Columns: **Level**, **Last seen**,
+whose **Count** keeps growing. Columns: **Level**, **Last logged**, **Last found**,
 **Logger**, **Message** and **Count**; filter by level. Click the ▸ next to
 a message to see when it was first and last seen, how many scans found it,
 the built-in knowledge base's explanation and suggested fix when it
@@ -329,6 +329,13 @@ Backup warnings and errors aren't in this list - they're in
 [Backups](#backups) instead, so a failing backup is only listed once.
 Anomalies logged only while Home Assistant was starting or shutting down
 are on [Startup & shutdown](#startup--shutdown) instead.
+
+**Last logged** is the time the newest of an entry's log lines itself
+says it was logged (the default sort, newest first); **Last found** is when
+the scan that last found it ran, which can be much later. Some Supervisor
+log lines carry no time of their own; an entry with only those shows "—"
+under Last logged. The same two columns are on Startup & shutdown and
+Backups.
 
 ### Startup & shutdown
 
@@ -521,11 +528,11 @@ Two kinds of entry:
   finishes - manual, automatic, or asked for by the add-on. A backup the
   manager fails is added the same way as a problem ("Backup failed:
   upload failed"). Like anomalies, successes are grouped, so each kind is
-  one entry: its **Last seen** is the latest successful backup, **Count**
+  one entry: its **Last logged** is the latest successful backup, **Count**
   how many there have been. Marking one resolved archives it until the
   next success brings it back.
 
-Columns: **Status** (Success or the problem's level), **Last seen**,
+Columns: **Status** (Success or the problem's level), **Last logged**, **Last found**,
 **Source** (with the logger), **Message** and **Count**; filter to
 problems, successes or one source. Click ▸ for the details and latest log
 lines.
