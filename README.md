@@ -467,6 +467,14 @@ These problems end by themselves, so this list keeps up with them:
   unavailable, the entry returns to **Open**, marked **Recurred**, so a
   new problem isn't hidden. **Stop ignoring** moves entries back to Open
   (or to Archived, if they've cleared).
+- **Don't monitor** goes further, for a device you don't want reported at
+  all (or an entity with no device): Log Doctor stops reporting it,
+  whatever becomes unavailable or isn't provided any more, and lists it on
+  the **Not monitored** tab with when that started (the problem shown is
+  the last one reported). Integrations and Repairs issues aren't devices,
+  so they can be ignored but not left unmonitored. **Monitor again**
+  removes a device from that tab and checks straight away, so one that's
+  still unavailable is back on **Open** as a new problem.
 
 Home Assistant resets every entity's "last changed" time when it restarts,
 so a device that was already offline before a restart counts from the

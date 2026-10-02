@@ -251,6 +251,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
         )
         entry.async_on_unload(health_monitor.async_start())
+        # "Monitor again" on the panel checks straight away.
+        health_store.recheck = health_monitor.async_check
 
     # Home Assistant's own backups, as they complete or fail.
     entry.async_on_unload(BackupEventMonitor(hass, backup_store).async_start())

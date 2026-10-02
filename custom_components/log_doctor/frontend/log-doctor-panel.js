@@ -42,6 +42,8 @@ const WS = {
   DELETE: "log_doctor/review/delete",
   IGNORE: "log_doctor/review/ignore",
   UNIGNORE: "log_doctor/review/unignore",
+  UNMONITOR: "log_doctor/review/unmonitor",
+  MONITOR: "log_doctor/review/monitor",
   SET_CATEGORY: "log_doctor/review/set_category",
   INVESTIGATION_PROMPT: "log_doctor/review/investigation_prompt",
 };
@@ -253,6 +255,7 @@ const TEMPLATE = `
       <button class="tab" data-tab="open">Open</button>
       <button class="tab" data-tab="archived">Archived</button>
       <button class="tab" data-tab="ignored" data-ignorable>Ignored</button>
+      <button class="tab" data-tab="unmonitored" data-unmonitorable>Not monitored</button>
     </div>
     <div class="toolbar">
       <input type="search" data-el="filter">
@@ -270,6 +273,10 @@ const TEMPLATE = `
         title="Stop showing these here; they keep being tracked on the Ignored tab">Ignore</button>
       <button class="action secondary" data-action="unignore" data-show="ignored" disabled
         title="Move these back to the open list">Stop ignoring</button>
+      <button class="action secondary" data-action="unmonitor" data-show="open archived ignored" data-unmonitorable disabled
+        title="Stop reporting these devices altogether, whatever becomes unavailable or isn't provided any more; they're listed on the Not monitored tab">Don't monitor</button>
+      <button class="action secondary" data-action="monitor" data-show="unmonitored" data-unmonitorable disabled
+        title="Report these devices again; they're checked straight away">Monitor again</button>
       <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
       <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
       <button class="action danger secondary" data-action="ask-delete" data-show="archived" data-only-view="reboots" disabled>Delete selected</button>
@@ -487,6 +494,7 @@ const VIEWS = {
       open: "No device or integration problems. 🎉",
       archived: "Nothing archived. Problems that clear up by themselves, and ones you mark resolved, appear here.",
       ignored: "Nothing ignored. Problems you ignore - entities that are unavailable on purpose - appear here, still checked.",
+      unmonitored: "Every device is monitored. Devices you mark \"Don't monitor\" appear here, and nothing about them is reported until you monitor them again.",
     },
     columns: [
       { key: "kind", label: "Type" },
@@ -503,6 +511,7 @@ const VIEWS = {
     tiebreak: (a, b) => (a.since || "").localeCompare(b.since || ""),
     expandable: true,
     ignorable: true,
+    unmonitorable: true,
     // Its Ignored tab shows whether each problem is still there.
     ignoredColumns: [
       { key: "ignored", label: "Ignored", firstDir: -1 },
@@ -573,8 +582,13 @@ const IGNORED_COLUMNS = [
   { key: "ignored_count", label: "Since ignored", num: true, firstDir: -1 },
 ];
 
+// Devices & integrations kinds that are a device (or an entity with no
+// device), which can be left unmonitored.
+const DEVICE_KINDS = ["offline", "unavailable"];
+
 // Which tab an entry is on.
 function tabOf(r) {
+  if (r.unmonitored) return "unmonitored";
   if (r.ignored) return "ignored";
   return r.resolved ? "archived" : "open";
 }
@@ -827,6 +841,7 @@ class LogDoctorPanel extends HTMLElement {
       return [...cols, label ? { ...RESOLVED_COLUMN, label } : RESOLVED_COLUMN];
     }
     if (tab === "ignored") return [...cols, ...(VIEWS[this._view].ignoredColumns || IGNORED_COLUMNS)];
+    if (tab === "unmonitored") return [...cols, { key: "unmonitored", label: "Not monitored since", firstDir: -1 }];
     return cols;
   }
 
@@ -834,6 +849,7 @@ class LogDoctorPanel extends HTMLElement {
     const view = VIEWS[this._view];
     if (key === "resolved") return (a, b) => (a.resolved || "").localeCompare(b.resolved || "");
     if (key === "ignored") return (a, b) => (a.ignored || "").localeCompare(b.ignored || "");
+    if (key === "unmonitored") return (a, b) => (a.unmonitored || "").localeCompare(b.unmonitored || "");
     if (key === "active") return (a, b) => Number(!!a.active) - Number(!!b.active);
     if (key === "ignored_count") return (a, b) => (a.ignored_count || 0) - (b.ignored_count || 0);
     if (this._view === "failures" && key === "time") {
@@ -902,20 +918,22 @@ class LogDoctorPanel extends HTMLElement {
     const st = this._st();
     const archived = st.tab === "archived";
     const ignoredTab = st.tab === "ignored";
-    const tabCounts = { open: 0, archived: 0, ignored: 0 };
+    const tabCounts = { open: 0, archived: 0, ignored: 0, unmonitored: 0 };
     for (const r of st.records) tabCounts[tabOf(r)] += 1;
     const archivedCount = tabCounts.archived;
-    const tabNames = { open: "Open", archived: "Archived", ignored: "Ignored" };
+    const tabNames = { open: "Open", archived: "Archived", ignored: "Ignored", unmonitored: "Not monitored" };
     for (const tab of this.shadowRoot.querySelectorAll(".tab")) {
       tab.textContent = `${tabNames[tab.dataset.tab]} (${tabCounts[tab.dataset.tab]})`;
       tab.classList.toggle("active", tab.dataset.tab === st.tab);
     }
-    for (const el of this.shadowRoot.querySelectorAll("[data-show], [data-ignorable]")) {
+    for (const el of this.shadowRoot.querySelectorAll("[data-show], [data-ignorable], [data-unmonitorable]")) {
       const onTab = el.dataset.show === undefined || el.dataset.show.split(" ").includes(st.tab);
-      el.hidden = !onTab || (el.dataset.ignorable !== undefined && !view.ignorable);
+      el.hidden = !onTab
+        || (el.dataset.ignorable !== undefined && !view.ignorable)
+        || (el.dataset.unmonitorable !== undefined && !view.unmonitorable);
     }
     for (const el of this.shadowRoot.querySelectorAll("[data-only-view]")) {
-      const shownByTab = !el.matches("[data-show], [data-ignorable]") || !el.hidden;
+      const shownByTab = !el.matches("[data-show], [data-ignorable], [data-unmonitorable]") || !el.hidden;
       el.hidden = !el.dataset.onlyView.split(" ").includes(this._view) || !shownByTab;
     }
 
@@ -1024,6 +1042,12 @@ class LogDoctorPanel extends HTMLElement {
         td.append(this._dateTime(r.resolved));
         tr.appendChild(td);
       }
+      if (st.tab === "unmonitored") {
+        const td = this._td("", "when");
+        td.title = "Nothing about it has been reported since";
+        td.append(this._label("Not monitored since "), this._dateTime(r.unmonitored));
+        tr.appendChild(td);
+      }
       if (ignoredTab) {
         const td = this._td("", "when");
         td.append(this._label("Ignored "), this._dateTime(r.ignored));
@@ -1095,6 +1119,14 @@ class LogDoctorPanel extends HTMLElement {
     const unignoreBtn = this.shadowRoot.querySelector('[data-action="unignore"]');
     unignoreBtn.disabled = n === 0;
     unignoreBtn.textContent = n ? `Stop ignoring ${n}` : "Stop ignoring";
+    // Only devices (and entities with no device) can be left unmonitored.
+    const devices = rows.filter((r) => st.selected.has(r.id) && DEVICE_KINDS.includes(r.kind)).length;
+    const unmonitorBtn = this.shadowRoot.querySelector('[data-action="unmonitor"]');
+    unmonitorBtn.disabled = devices === 0;
+    unmonitorBtn.textContent = devices ? `Don't monitor ${devices}` : "Don't monitor";
+    const monitorBtn = this.shadowRoot.querySelector('[data-action="monitor"]');
+    monitorBtn.disabled = n === 0;
+    monitorBtn.textContent = n ? `Monitor ${n} again` : "Monitor again";
     const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
     copyBtn.disabled = n === 0;
     if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
@@ -1712,6 +1744,18 @@ class LogDoctorPanel extends HTMLElement {
         const ids = selectedIds();
         const category = btn.dataset.action === "to-restarts" ? "restart" : "operational";
         if (ids.length && (await this._call(WS.SET_CATEGORY, { ids, category }))) {
+          for (const id of ids) st.selected.delete(id);
+          this._render();
+        }
+        break;
+      }
+      case "unmonitor":
+      case "monitor": {
+        const unmonitor = btn.dataset.action === "unmonitor";
+        const ids = unmonitor
+          ? this._visible().filter((r) => st.selected.has(r.id) && DEVICE_KINDS.includes(r.kind)).map((r) => r.id)
+          : selectedIds();
+        if (ids.length && (await this._call(unmonitor ? WS.UNMONITOR : WS.MONITOR, { ids }))) {
           for (const id of ids) st.selected.delete(id);
           this._render();
         }

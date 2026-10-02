@@ -5,7 +5,7 @@ filled by health_monitor.py. One record per problem:
 
     {"id", "kind", "name", "sub", "detail", "since", "link", "entities",
      "active", "resolved", "recurred", "recovered", "ignored",
-     "ignored_entities"}
+     "ignored_entities", "unmonitored"}
 
 kind is "offline" (a device or entity unavailable), "unavailable" (some
 of a device's entities unavailable), "integration"
@@ -31,6 +31,12 @@ record tracks whether the problem is still there ("active"):
   its entities becomes unavailable, it returns to the open list marked
   "recurred". Stopping ignoring it moves it back to the open list (or the
   archive, if it has cleared).
+- Marking a device (or an entity with no device) not monitored
+  (unmonitored = when) stops reporting it altogether: checks leave its
+  record alone, whatever becomes unavailable or isn't provided any more,
+  and it's listed on the Not monitored tab. Monitoring it again removes
+  the record and checks straight away (recheck), so a device that's still
+  unavailable is back on the open list as a new problem.
 """
 from __future__ import annotations
 
@@ -45,8 +51,14 @@ from .review_list import ReviewList
 _DISPLAY_FIELDS = ("name", "sub", "detail", "link", "entities", "kind", "integration", "integration_name", "integration_core")
 
 
+# Kinds that are a device or an entity, which can be marked not monitored.
+_DEVICE_KINDS = ("offline", "unavailable")
+
+
 class HealthStore(ReviewList):
     storage_key = "log_doctor.health"
+    # Set by __init__.py to the health monitor's check (see async_monitor).
+    recheck: Any = None
     records_key = "issues"
     max_records = 5_000
 
@@ -70,6 +82,8 @@ class HealthStore(ReviewList):
 
         for issue_id, issue in current.items():
             record = by_id.get(issue_id)
+            if record is not None and record.get("unmonitored"):
+                continue  # not reported any more
             if record is not None and record.get("ignored"):
                 if self._update_ignored(record, issue, now):
                     changed = True
@@ -102,6 +116,8 @@ class HealthStore(ReviewList):
                 changed = True
 
         for record in self._records:
+            if record.get("unmonitored"):
+                continue
             if record["id"] not in current and record.get("active") and record.get("ignored"):
                 # Cleared while ignored: it stays ignored.
                 record["active"] = False
@@ -141,13 +157,49 @@ class HealthStore(ReviewList):
             changed = True
         return changed
 
+    async def async_unmonitor(self, ids: list[str]) -> int:
+        """Stop reporting devices (or entities with no device) altogether."""
+        now = dt_util.utcnow().isoformat()
+        wanted = set(ids)
+        count = 0
+        for record in self._records:
+            if (
+                record["id"] in wanted
+                and record.get("kind") in _DEVICE_KINDS
+                and not record.get("unmonitored")
+            ):
+                record["unmonitored"] = now
+                record["ignored"] = None
+                record.pop("ignored_entities", None)
+                record["resolved"] = None
+                record["recurred"] = False
+                record["recovered"] = False
+                count += 1
+        if count:
+            self.async_changed()
+        return count
+
+    async def async_monitor(self, ids: list[str]) -> int:
+        """Monitor devices again: forget them, then check straight away."""
+        wanted = set(ids)
+        before = len(self._records)
+        self._records = [
+            r for r in self._records if not (r["id"] in wanted and r.get("unmonitored"))
+        ]
+        count = before - len(self._records)
+        if count:
+            self.async_changed()
+            if self.recheck is not None:
+                self.hass.async_create_task(self.recheck())
+        return count
+
     async def async_ignore(self, ids: list[str]) -> int:
         """Move problems to the Ignored tab, from open or archived."""
         now = dt_util.utcnow().isoformat()
         wanted = set(ids)
         count = 0
         for record in self._records:
-            if record["id"] in wanted and not record.get("ignored"):
+            if record["id"] in wanted and not record.get("ignored") and not record.get("unmonitored"):
                 record["ignored"] = now
                 record["ignored_entities"] = list(record.get("entities") or [])
                 record["resolved"] = None
@@ -176,8 +228,8 @@ class HealthStore(ReviewList):
         return count
 
     async def async_resolve(self, ids: list[str]) -> int:
-        # Ignored problems stay ignored.
-        ignored = {r["id"] for r in self._records if r.get("ignored")}
+        # Ignored and unmonitored problems stay where they are.
+        ignored = {r["id"] for r in self._records if r.get("ignored") or r.get("unmonitored")}
         ids = [i for i in ids if i not in ignored]
         count = await super().async_resolve(ids)
         wanted = set(ids)
@@ -195,7 +247,11 @@ class HealthStore(ReviewList):
         self._records = [
             r
             for r in self._records
-            if r.get("active") or r.get("ignored") or not r.get("resolved") or r["resolved"] >= cutoff
+            if r.get("active")
+            or r.get("ignored")
+            or r.get("unmonitored")
+            or not r.get("resolved")
+            or r["resolved"] >= cutoff
         ]
         if len(self._records) != before:
             self.async_changed()

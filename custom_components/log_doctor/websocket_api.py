@@ -13,6 +13,9 @@ log_doctor/review/ignore and log_doctor/review/unignore move entries of the
 lists that support it ("anomalies" and "backups") to and from their
 Ignored tab.
 
+log_doctor/review/unmonitor and log_doctor/review/monitor stop and resume
+monitoring devices on the Devices & integrations view ("health").
+
 log_doctor/review/set_category moves Log review entries between the Log
 review ("operational") and Startup & shutdown ("restart") views.
 
@@ -54,6 +57,8 @@ WS_DELETE = "log_doctor/review/delete"
 WS_INVESTIGATION_PROMPT = "log_doctor/review/investigation_prompt"
 WS_IGNORE = "log_doctor/review/ignore"
 WS_UNIGNORE = "log_doctor/review/unignore"
+WS_UNMONITOR = "log_doctor/review/unmonitor"
+WS_MONITOR = "log_doctor/review/monitor"
 WS_SET_CATEGORY = "log_doctor/review/set_category"
 
 _LISTS = {
@@ -78,6 +83,8 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_investigation_prompt)
     websocket_api.async_register_command(hass, websocket_ignore)
     websocket_api.async_register_command(hass, websocket_unignore)
+    websocket_api.async_register_command(hass, websocket_unmonitor)
+    websocket_api.async_register_command(hass, websocket_monitor)
     websocket_api.async_register_command(hass, websocket_set_category)
 
 
@@ -149,7 +156,7 @@ async def _async_ignore(
         return
     handler = getattr(review_list, method, None)
     if handler is None:
-        connection.send_error(msg["id"], "not_supported", "Entries of this list can't be ignored")
+        connection.send_error(msg["id"], "not_supported", "Entries of this list don't support that")
         return
     connection.send_result(msg["id"], {"count": await handler(msg["ids"])})
 
@@ -254,3 +261,27 @@ async def websocket_delete(
     if (review_list := _get_list(hass, connection, msg)) is None:
         return
     connection.send_result(msg["id"], {"count": await review_list.async_delete(msg["ids"])})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_UNMONITOR, vol.Required("list"): _LIST, vol.Required("ids"): _IDS}
+)
+@websocket_api.async_response
+async def websocket_unmonitor(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Stop reporting devices (Devices & integrations only)."""
+    await _async_ignore(hass, connection, msg, "async_unmonitor")
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_MONITOR, vol.Required("list"): _LIST, vol.Required("ids"): _IDS}
+)
+@websocket_api.async_response
+async def websocket_monitor(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Monitor devices again (Devices & integrations only)."""
+    await _async_ignore(hass, connection, msg, "async_monitor")
