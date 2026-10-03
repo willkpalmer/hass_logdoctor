@@ -269,7 +269,10 @@ A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
 works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
 (or go straight to `/log-doctor#logs`, `#restarts`, `#failures`,
-`#health`, `#backups` or `#reboots`); each shows how many entries are still open. The scan's
+`#health`, `#backups` or `#reboots`); each shows how many entries are still open.
+**Scan now**, at the end of that row, runs a scan straight away (as the
+daily scan does) from any page; the lists update as soon as it's done, and
+the button briefly shows how many new anomalies it found. The scan's
 notification links to the Log review (and to Backups when it found new
 backup problems), and each automation failure notification to the failures
 list.

@@ -88,6 +88,8 @@ log-doctor-settings { flex: 1 1 auto; min-height: 0; overflow: auto; }
 }
 .view.active { background: var(--primary-color, #03a9f4); border-color: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
 .view .count { opacity: 0.8; font-weight: 400; }
+.view.scan { border-color: var(--primary-color, #03a9f4); color: var(--primary-color, #03a9f4); }
+.view.scan:disabled { opacity: 0.6; cursor: default; }
 .card {
   background: var(--card-background-color, #fff);
   border-radius: var(--ha-card-border-radius, 12px);
@@ -248,6 +250,7 @@ const TEMPLATE = `
     <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
     <button class="view" data-view="reboots">Restart history <span class="count" data-count="reboots"></span></button>
     <button class="view" data-view="settings">Settings</button>
+    <button class="view scan" data-action="scan-now" title="Scan the logs now, as the daily scan does; the lists update as soon as it's done">Scan now</button>
   </div>
   <log-doctor-settings data-el="settings" hidden></log-doctor-settings>
   <div class="card" data-el="list-card">
@@ -1260,6 +1263,33 @@ class LogDoctorPanel extends HTMLElement {
     return [page, ...links];
   }
 
+  // Runs a scan (the Scan now button entity / log_doctor.scan_now). The
+  // lists update by themselves; the button says how it went for a moment.
+  async _scanNow(btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = "Scanning…";
+    let result = "Scan now";
+    try {
+      const res = await this._hass.callWS({ type: SWS.SCAN_NOW });
+      const sum = res?.status?.summary;
+      result = sum ? `Scanned ✓ ${sum.new} new` : "Scanned ✓";
+      btn.title = sum
+        ? `Last scan: ${sum.new} new, ${sum.recurring} still occurring`
+        : "Scan finished";
+      // The Settings view shows the last scan's details.
+      if (this._view === "settings") this._el("settings").activate();
+    } catch (err) {
+      result = "Scan failed";
+      btn.title = `Scan failed: ${err.message || err.code || err}`;
+    }
+    btn.disabled = false;
+    btn.textContent = result;
+    setTimeout(() => {
+      if (!btn.disabled) btn.textContent = "Scan now";
+    }, 4000);
+  }
+
   // Restart history rows: one restart's shutdown and startup windows.
   _rebootCells(tr, r) {
     const tdShutdown = this._td("", "when");
@@ -1683,6 +1713,11 @@ class LogDoctorPanel extends HTMLElement {
     const viewBtn = find("view");
     if (viewBtn) {
       this._setView(viewBtn.dataset.view);
+      return;
+    }
+    // Scan now, next to the view buttons: on every view, Settings included.
+    if (find("action")?.dataset.action === "scan-now") {
+      await this._scanNow(find("action"));
       return;
     }
     if (!VIEWS[this._view]) {
