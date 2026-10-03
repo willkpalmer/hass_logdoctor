@@ -424,8 +424,14 @@ helper or entity) - come first, then the integrations for your devices and
 services, each alphabetically. Entries that don't belong to an integration
 are grouped under "Other", at the end.
 
-Headings of integrations with offline devices or unavailable entities have
-an **Unavailable entities ↗** link: it opens Home Assistant's **Settings →
+Each integration heading starts with a link to its page: **Integration ↗**
+opens the integration's page under Settings → Devices & services, and Home
+Assistant's own parts link to their own pages instead - **Automations ↗**,
+**Scripts ↗**, **Scenes ↗**, **Helpers ↗** (input helpers, counters,
+timers, schedules), **People ↗** and **Zones ↗**.
+
+Headings of integrations with offline devices or unavailable entities also
+have an **Unavailable entities ↗** link: it opens Home Assistant's **Settings →
 Entities** filtered to that integration, with "Unavailable" in the search
 box, so you can remove entities that are gone. Entities Home Assistant
 keeps only because they're registered - ones the integration no longer

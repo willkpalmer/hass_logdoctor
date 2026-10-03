@@ -308,6 +308,26 @@ const OTHER_GROUP = "Other";
 // Where the collapsed groups of each view are remembered, per browser.
 const COLLAPSED_KEY = "log_doctor.collapsed_groups";
 
+// Where an integration heading's first link goes: Home Assistant's own
+// pages for its own parts (automations, scripts, scenes, helpers, people,
+// zones), the integration's page for everything else.
+const INTEGRATION_PAGES = {
+  automation: ["Automations ↗", "/config/automation/dashboard"],
+  script: ["Scripts ↗", "/config/script/dashboard"],
+  scene: ["Scenes ↗", "/config/scene/dashboard"],
+  person: ["People ↗", "/config/person"],
+  zone: ["Zones ↗", "/config/zone"],
+};
+const HELPER_DOMAINS = [
+  "input_boolean", "input_button", "input_datetime", "input_number", "input_select",
+  "input_text", "counter", "timer", "schedule",
+];
+function integrationPage(domain) {
+  if (INTEGRATION_PAGES[domain]) return INTEGRATION_PAGES[domain];
+  if (HELPER_DOMAINS.includes(domain)) return ["Helpers ↗", "/config/helpers"];
+  return ["Integration ↗", `/config/integrations/integration/${encodeURIComponent(domain)}`];
+}
+
 // How long a restart took: from the shutdown (or the start, when no
 // shutdown was recorded) until Home Assistant had finished starting.
 function rebootSeconds(r) {
@@ -486,8 +506,9 @@ const VIEWS = {
     groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,
     // Home Assistant's own parts (automations, scripts, helpers, ...) first.
     groupRank: (r) => (r.integration_core ? 0 : 1),
-    // Links on each integration's heading to its unavailable entities on
-    // Home Assistant's entities page (see _groupLinks).
+    // Links on each integration's heading to its page (or Home Assistant's
+    // page for its own parts) and its unavailable entities on the entities
+    // page (see _groupLinks).
     groupLinks: true,
     defaultSort: { key: "since", dir: -1 },
     empty: {
@@ -1208,8 +1229,16 @@ class LogDoctorPanel extends HTMLElement {
   // one term, so they get a link of their own.
   _groupLinks(groupRows) {
     const domain = groupRows.find((r) => r.integration)?.integration;
+    if (!domain) return [];
+    const [pageLabel, pageHref] = integrationPage(domain);
+    const page = document.createElement("a");
+    page.className = "group-link";
+    page.href = pageHref;
+    page.dataset.nav = "1";
+    page.title = `Open ${pageLabel === "Integration ↗" ? "this integration's page" : `the ${pageLabel.replace(" ↗", "")} page`}`;
+    page.textContent = pageLabel;
     const entityRows = groupRows.filter((r) => (r.kind === "offline" || r.kind === "unavailable") && (r.entities || []).length);
-    if (!domain || !entityRows.length) return [];
+    if (!entityRows.length) return [page];
     const status = (key, fallback) =>
       this._hass?.localize?.(`ui.panel.config.entities.picker.status.${key}`) || fallback;
     const link = (label, search, title) => {
@@ -1228,7 +1257,7 @@ class LogDoctorPanel extends HTMLElement {
       links.push(link("Not provided ↗", status("not_provided", "Not provided"),
         "Open Settings → Entities for this integration, searching for entities it no longer provides"));
     }
-    return links;
+    return [page, ...links];
   }
 
   // Restart history rows: one restart's shutdown and startup windows.
