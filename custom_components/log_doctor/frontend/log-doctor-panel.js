@@ -512,8 +512,16 @@ const VIEWS = {
     list: "health",
     noun: ["entry", "entries"],
     filterPlaceholder: "Filter by name, area or problem",
-    kinds: [["", "Everything"], ["offline", "Offline devices"], ["unavailable", "Unavailable entities"], ["integration", "Integrations"], ["repair", "Repairs"]],
+    kinds: [
+      ["", "Everything"], ["offline", "Offline devices"], ["unavailable", "Unavailable entities"],
+      ["not_provided", "Not provided"], ["integration", "Integrations"], ["repair", "Repairs"],
+    ],
     kindOf: (r) => r.kind,
+    // Not provided: entries with entities their integration no longer
+    // provides (an offline or unavailable one's "N no longer provided").
+    matches: (r, kind) => (kind === "not_provided"
+      ? (r.detail || "").includes("no longer provided")
+      : r.kind === kind),
     search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")}`,
     // Rows are shown under a heading for their integration
     groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,

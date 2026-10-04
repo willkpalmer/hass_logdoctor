@@ -452,7 +452,8 @@ ones, so nothing hidden gets marked resolved by accident.
 
 Columns: **Type**, **Name** (with its area and integration; links to the
 device, integration or Repairs page), **Problem** and **Since**; filter by
-type, or by integration name in the filter box. Click ▸ to see which
+type (**Not provided** shows the entries with entities their integration no
+longer provides, whether the device is offline or only partly unavailable), or by integration name in the filter box. Click ▸ to see which
 entities are affected; each opens the device it belongs to (where you can
 remove it), or, for an entity with no device, the entity's own dialog.
 
