@@ -444,6 +444,11 @@ when there are some, a **Not provided ↗** link searches for those instead.
 future version of the entities page ignores it, the link still filters to
 the integration.)
 
+The checkbox at the start of an integration's heading selects (or
+deselects) all of its entries at once - a dash means some are selected.
+It's disabled while the integration is collapsed, so nothing hidden gets
+selected.
+
 Click an integration's heading to collapse it (▸) or expand it again (▾);
 **Collapse all** / **Expand all** does every integration at once. Which
 integrations are collapsed is remembered in your browser. Collapsing an

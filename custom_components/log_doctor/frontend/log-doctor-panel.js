@@ -154,6 +154,7 @@ tbody tr.group td {
 tbody tr.group { cursor: pointer; user-select: none; }
 tbody tr.group .caret { display: inline-block; width: 1.2em; color: var(--secondary-text-color, #727272); }
 tbody tr.group .group-link {
+  display: inline-block; line-height: 1.5;
   margin-left: 12px; font-size: 12px; font-weight: 500; white-space: nowrap;
   padding: 1px 8px; border: 1px solid var(--primary-color, #03a9f4); border-radius: 10px;
 }
@@ -229,7 +230,15 @@ a:hover { text-decoration: underline; }
   tbody tr.row td { border: 0; padding: 0; min-width: 0; grid-column: 2; text-align: left; }
   tbody tr.row td.check { grid-column: 1; grid-row: 1 / span 8; }
   tbody tr.row td.when, tbody tr.row td.num { font-size: 12px; color: var(--secondary-text-color, #727272); }
-  tbody tr.group, tbody tr.group td { display: block; }
+  tbody tr.group { display: flex; align-items: center; }
+  tbody tr.group td { display: block; }
+  tbody tr.group td.check { width: auto; padding: 6px 0 6px 12px; }
+  tbody tr.group td:not(.check) { flex: 1 1 auto; min-width: 0; line-height: 2; }
+  tbody tr.group .group-link { margin-left: 0; margin-right: 6px; }
+  tbody tr.group .group-count { margin-right: 8px; }
+  /* The tabs scroll sideways rather than run off the card. */
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tab { white-space: nowrap; padding: 12px 14px; }
   tr.details { display: block; padding: 0 12px 10px; }
   tr.details td { display: block; padding: 0; }
   .detail-box { margin-left: 40px; }
@@ -1035,8 +1044,23 @@ class LogDoctorPanel extends HTMLElement {
         trGroup.className = "group";
         trGroup.dataset.groupToggle = lastGroup;
         trGroup.title = collapsed ? "Show this integration's entries" : "Hide this integration's entries";
+        // A checkbox selecting every entry under the heading (not while
+        // collapsed: nothing hidden is selected - see _collapse).
+        const groupRows = rows.filter((g) => view.groupBy(g) === lastGroup);
+        const tdCheck = document.createElement("td");
+        tdCheck.className = "check";
+        const groupCb = document.createElement("input");
+        groupCb.type = "checkbox";
+        groupCb.dataset.groupSelect = lastGroup;
+        const groupSelected = groupRows.filter((g) => st.selected.has(g.id)).length;
+        groupCb.checked = groupSelected > 0 && groupSelected === groupRows.length;
+        groupCb.indeterminate = groupSelected > 0 && groupSelected < groupRows.length;
+        groupCb.disabled = collapsed;
+        groupCb.title = collapsed ? "Expand this integration to select its entries" : "Select all of this integration's entries";
+        tdCheck.appendChild(groupCb);
+        trGroup.appendChild(tdCheck);
         const td = document.createElement("td");
-        td.colSpan = columns.length + 1;
+        td.colSpan = columns.length;
         const caret = document.createElement("span");
         caret.className = "caret";
         caret.textContent = collapsed ? "▸" : "▾";
@@ -1045,7 +1069,7 @@ class LogDoctorPanel extends HTMLElement {
         count.className = "group-count";
         count.textContent = ` (${groupSizes.get(lastGroup)})`;
         td.appendChild(count);
-        if (view.groupLinks) td.append(...this._groupLinks(rows.filter((g) => view.groupBy(g) === lastGroup)));
+        if (view.groupLinks) td.append(...this._groupLinks(groupRows));
         trGroup.appendChild(td);
         frag.appendChild(trGroup);
       }
@@ -1683,6 +1707,14 @@ class LogDoctorPanel extends HTMLElement {
       if (target.checked) st.selected.add(target.dataset.row);
       else st.selected.delete(target.dataset.row);
       this._render();
+    } else if (target.dataset.groupSelect !== undefined) {
+      const view = VIEWS[this._view];
+      for (const r of this._visible()) {
+        if (view.groupBy(r) !== target.dataset.groupSelect) continue;
+        if (target.checked) st.selected.add(r.id);
+        else st.selected.delete(r.id);
+      }
+      this._render();
     } else if (target.dataset.el === "select-all") {
       // Not the entries hidden in collapsed groups.
       for (const r of this._visible().filter((r) => !this._inCollapsedGroup(r))) {
@@ -1745,6 +1777,8 @@ class LogDoctorPanel extends HTMLElement {
       }
       return;
     }
+    // A heading's checkbox selects (see _onChange), it doesn't collapse.
+    if (find("groupSelect")) return;
     const groupRow = find("groupToggle");
     if (groupRow) {
       const group = groupRow.dataset.groupToggle;
