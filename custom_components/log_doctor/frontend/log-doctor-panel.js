@@ -158,6 +158,16 @@ tbody tr.group .group-link {
   padding: 1px 8px; border: 1px solid var(--primary-color, #03a9f4); border-radius: 10px;
 }
 tbody tr.group .group-link:hover { text-decoration: none; background: rgba(3, 169, 244, 0.1); }
+/* Unavailable entities: the theme's accent colour; Not provided: the same
+   red as the Offline label. */
+tbody tr.group .group-link.unavailable {
+  color: var(--accent-color, #ff9800); border-color: var(--accent-color, #ff9800);
+}
+tbody tr.group .group-link.unavailable:hover { background: rgba(255, 152, 0, 0.12); }
+tbody tr.group .group-link.not-provided {
+  color: var(--error-color, #db4437); border-color: var(--error-color, #db4437);
+}
+tbody tr.group .group-link.not-provided:hover { background: rgba(219, 68, 55, 0.12); }
 tbody tr.group .group-count { font-weight: 400; color: var(--secondary-text-color, #727272); }
 tbody tr.row.selected { background: rgba(3, 169, 244, 0.1); }
 tr.details td { border-top: 0; padding-top: 0; }
@@ -1244,9 +1254,9 @@ class LogDoctorPanel extends HTMLElement {
     if (!entityRows.length) return [page];
     const status = (key, fallback) =>
       this._hass?.localize?.(`ui.panel.config.entities.picker.status.${key}`) || fallback;
-    const link = (label, search, title) => {
+    const link = (label, search, title, kind) => {
       const a = document.createElement("a");
-      a.className = "group-link";
+      a.className = `group-link ${kind}`;
       a.href = `/config/entities?domain=${encodeURIComponent(domain)}`;
       a.dataset.nav = "1";
       a.dataset.search = search;
@@ -1255,10 +1265,10 @@ class LogDoctorPanel extends HTMLElement {
       return a;
     };
     const links = [link("Unavailable entities ↗", status("unavailable", "Unavailable"),
-      "Open Settings → Entities for this integration, searching for unavailable entities")];
+      "Open Settings → Entities for this integration, searching for unavailable entities", "unavailable")];
     if (entityRows.some((r) => (r.detail || "").includes("no longer provided"))) {
       links.push(link("Not provided ↗", status("not_provided", "Not provided"),
-        "Open Settings → Entities for this integration, searching for entities it no longer provides"));
+        "Open Settings → Entities for this integration, searching for entities it no longer provides", "not-provided"));
     }
     return [page, ...links];
   }
