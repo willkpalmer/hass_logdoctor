@@ -8,8 +8,11 @@
 //   #restarts  Startup & shutdown - the anomalies logged only while Home
 //              Assistant was starting or shutting down (the same list as
 //              the Log review, split by each entry's category)
-//   #failures  Automation failures - failed automation and script runs,
+//   #failures  Automations: Failures - failed automation and script runs,
 //              and scheduled runs missed while Home Assistant was offline
+//   #runs      Automations: Runs - every automation run, when and what
+//              triggered it (the Automations button covers both, with a
+//              switch between them at the top of the page)
 //   #health    Devices & integrations - offline devices, unavailable
 //              entities, integrations that failed to load, and Repairs
 //              issues
@@ -100,6 +103,15 @@ log-doctor-settings { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .card[hidden] { display: none; }
 .card > .tabs, .card > .toolbar, .card > .confirm, .card > .footer { flex: none; }
 .tabs { display: flex; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
+/* Sections of one page (Automations: Failures | Runs). */
+.sections { display: flex; gap: 8px; padding: 12px 16px 0; flex: none; }
+.sections[hidden] { display: none; }
+.section {
+  font: inherit; font-weight: 500; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--divider-color, #e0e0e0); background: transparent; color: var(--primary-text-color, #212121);
+}
+.section.active { border-color: var(--primary-color, #03a9f4); color: var(--primary-color, #03a9f4); background: rgba(3, 169, 244, 0.08); }
+.section .count { opacity: 0.8; font-weight: 400; }
 .tab {
   flex: 0 0 auto; padding: 12px 20px; background: none; border: 0;
   border-bottom: 2px solid transparent; color: var(--secondary-text-color, #727272);
@@ -264,7 +276,7 @@ const TEMPLATE = `
   <div class="views">
     <button class="view" data-view="logs">Log review <span class="count" data-count="logs"></span></button>
     <button class="view" data-view="restarts">Startup &amp; shutdown <span class="count" data-count="restarts"></span></button>
-    <button class="view" data-view="failures">Automation failures <span class="count" data-count="failures"></span></button>
+    <button class="view" data-view="failures" data-page="failures runs">Automations <span class="count" data-count="failures"></span></button>
     <button class="view" data-view="health">Devices &amp; integrations <span class="count" data-count="health"></span></button>
     <button class="view" data-view="backups">Backups <span class="count" data-count="backups"></span></button>
     <button class="view" data-view="reboots">Restart history <span class="count" data-count="reboots"></span></button>
@@ -273,9 +285,13 @@ const TEMPLATE = `
   </div>
   <log-doctor-settings data-el="settings" hidden></log-doctor-settings>
   <div class="card" data-el="list-card">
+    <div class="sections" data-el="sections" hidden>
+      <button class="section" data-view="failures">Failures <span class="count" data-section-count="failures"></span></button>
+      <button class="section" data-view="runs">Runs <span class="count" data-section-count="runs"></span></button>
+    </div>
     <div class="tabs">
       <button class="tab" data-tab="open">Open</button>
-      <button class="tab" data-tab="archived">Archived</button>
+      <button class="tab" data-tab="archived" data-archivable>Archived</button>
       <button class="tab" data-tab="ignored" data-ignorable>Ignored</button>
       <button class="tab" data-tab="unmonitored" data-unmonitorable>Not monitored</button>
     </div>
@@ -299,10 +315,10 @@ const TEMPLATE = `
         title="Stop reporting these devices altogether, whatever becomes unavailable or isn't provided any more; they're listed on the Not monitored tab">Don't monitor</button>
       <button class="action secondary" data-action="monitor" data-show="unmonitored" data-unmonitorable disabled
         title="Report these devices again; they're checked straight away">Monitor again</button>
-      <button class="action" data-action="resolve" data-show="open" disabled>Mark resolved</button>
-      <button class="action secondary" data-action="restore" data-show="archived" disabled>Restore to open</button>
+      <button class="action" data-action="resolve" data-show="open" data-archivable disabled>Mark resolved</button>
+      <button class="action secondary" data-action="restore" data-show="archived" data-archivable disabled>Restore to open</button>
       <button class="action danger secondary" data-action="ask-delete" data-show="archived" data-only-view="reboots" disabled>Delete selected</button>
-      <button class="action danger secondary" data-action="ask-clear" data-show="archived" disabled>Clear archive</button>
+      <button class="action danger secondary" data-action="ask-clear" data-show="archived" data-archivable disabled>Clear archive</button>
     </div>
     <div class="confirm" data-el="confirm">
       <span data-el="confirm-text"></span>
@@ -370,6 +386,10 @@ function phaseLabel(r) {
 function backupRank(r) {
   return r.kind === "success" ? 0 : LEVEL_RANK[r.level] || 0;
 }
+
+// Devices & integrations kinds that are a device (or an entity with no
+// device), which can be left unmonitored.
+const DEVICE_KINDS = ["offline", "unavailable"];
 
 const VIEWS = {
   logs: {
@@ -517,6 +537,44 @@ const VIEWS = {
     expandable: false,
     where: "the automation failure log",
   },
+  runs: {
+    list: "automation_runs",
+    noun: ["run", "runs"],
+    filterPlaceholder: "Filter by automation or trigger",
+    kinds: [["", "Everything"], ["triggered", "Triggered"], ["manual", "Manual"]],
+    kindOf: (r) => (r.manual ? "manual" : "triggered"),
+    search: (r) => `${r.name} ${r.entity_id} ${r.manual ? "Manual" : r.trigger || ""}`,
+    defaultSort: { key: "when", dir: -1 },
+    empty: {
+      open: "No automation runs recorded yet. Every automation run appears here as it happens.",
+      unmonitored: "No automations excluded. Runs of automations you exclude stop being recorded, and they appear here until you include them again.",
+    },
+    columns: [
+      { key: "when", label: "Ran", firstDir: -1 },
+      { key: "name", label: "Automation" },
+      { key: "trigger", label: "Trigger" },
+    ],
+    compare: {
+      when: (a, b) => (a.when || "").localeCompare(b.when || ""),
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      trigger: (a, b) => runTrigger(a).localeCompare(runTrigger(b), undefined, { sensitivity: "base" }),
+    },
+    tiebreak: (a, b) => (a.when || "").localeCompare(b.when || ""),
+    expandable: false,
+    // A log, not a to-do list: no Archived tab, nothing to resolve.
+    archivable: false,
+    // Excluding an automation, like leaving a device unmonitored.
+    unmonitorable: true,
+    unmonitorKinds: ["run"],
+    unmonitorLabels: ["Exclude automation", "Include again"],
+    unmonitorTitles: [
+      "Remove these automations' runs and stop recording them; they're listed on the Excluded tab",
+      "Record these automations' runs again",
+    ],
+    unmonitoredSince: "Excluded since",
+    tabNames: { open: "Runs", unmonitored: "Excluded" },
+    where: "the automation runs",
+  },
   health: {
     list: "health",
     noun: ["entry", "entries"],
@@ -563,6 +621,7 @@ const VIEWS = {
     expandable: true,
     ignorable: true,
     unmonitorable: true,
+    unmonitorKinds: DEVICE_KINDS,
     // Its Ignored tab shows whether each problem is still there.
     ignoredColumns: [
       { key: "ignored", label: "Ignored", firstDir: -1 },
@@ -633,9 +692,11 @@ const IGNORED_COLUMNS = [
   { key: "ignored_count", label: "Since ignored", num: true, firstDir: -1 },
 ];
 
-// Devices & integrations kinds that are a device (or an entity with no
-// device), which can be left unmonitored.
-const DEVICE_KINDS = ["offline", "unavailable"];
+// What started an automation run: its trigger, or Manual.
+function runTrigger(r) {
+  return r.manual ? "Manual" : r.trigger || "";
+}
+
 
 // Which tab an entry is on.
 function tabOf(r) {
@@ -892,7 +953,10 @@ class LogDoctorPanel extends HTMLElement {
       return [...cols, label ? { ...RESOLVED_COLUMN, label } : RESOLVED_COLUMN];
     }
     if (tab === "ignored") return [...cols, ...(VIEWS[this._view].ignoredColumns || IGNORED_COLUMNS)];
-    if (tab === "unmonitored") return [...cols, { key: "unmonitored", label: "Not monitored since", firstDir: -1 }];
+    if (tab === "unmonitored") {
+      const label = VIEWS[this._view].unmonitoredSince || "Not monitored since";
+      return [...cols, { key: "unmonitored", label, firstDir: -1 }];
+    }
     return cols;
   }
 
@@ -947,12 +1011,25 @@ class LogDoctorPanel extends HTMLElement {
   _render() {
     this._rendered = true;
     for (const btn of this.shadowRoot.querySelectorAll(".view")) {
-      btn.classList.toggle("active", btn.dataset.view === this._view);
+      // A button covering several views (Automations) is active on each.
+      const views = (btn.dataset.page || btn.dataset.view || "").split(" ");
+      btn.classList.toggle("active", views.includes(this._view));
     }
     for (const name of Object.keys(VIEWS)) {
       const s = this._st(name);
       const open = s.records.filter((r) => tabOf(r) === "open").length;
-      this.shadowRoot.querySelector(`[data-count="${name}"]`).textContent = s.loaded ? `(${open})` : "";
+      const count = s.loaded ? `(${open})` : "";
+      const navCount = this.shadowRoot.querySelector(`[data-count="${name}"]`);
+      if (navCount) navCount.textContent = count;
+      const sectionCount = this.shadowRoot.querySelector(`[data-section-count="${name}"]`);
+      if (sectionCount) sectionCount.textContent = count;
+    }
+    // The Failures | Runs switch, on the Automations page.
+    const sections = this._el("sections");
+    const page = this.shadowRoot.querySelector(`.view[data-page~="${this._view}"]`);
+    sections.hidden = !page;
+    for (const btn of sections.querySelectorAll(".section")) {
+      btn.classList.toggle("active", btn.dataset.view === this._view);
     }
     const settings = this._el("settings");
     const showSettings = this._view === "settings";
@@ -972,19 +1049,20 @@ class LogDoctorPanel extends HTMLElement {
     const tabCounts = { open: 0, archived: 0, ignored: 0, unmonitored: 0 };
     for (const r of st.records) tabCounts[tabOf(r)] += 1;
     const archivedCount = tabCounts.archived;
-    const tabNames = { open: "Open", archived: "Archived", ignored: "Ignored", unmonitored: "Not monitored" };
+    const tabNames = { open: "Open", archived: "Archived", ignored: "Ignored", unmonitored: "Not monitored", ...view.tabNames };
     for (const tab of this.shadowRoot.querySelectorAll(".tab")) {
       tab.textContent = `${tabNames[tab.dataset.tab]} (${tabCounts[tab.dataset.tab]})`;
       tab.classList.toggle("active", tab.dataset.tab === st.tab);
     }
-    for (const el of this.shadowRoot.querySelectorAll("[data-show], [data-ignorable], [data-unmonitorable]")) {
+    for (const el of this.shadowRoot.querySelectorAll("[data-show], [data-ignorable], [data-unmonitorable], [data-archivable]")) {
       const onTab = el.dataset.show === undefined || el.dataset.show.split(" ").includes(st.tab);
       el.hidden = !onTab
         || (el.dataset.ignorable !== undefined && !view.ignorable)
-        || (el.dataset.unmonitorable !== undefined && !view.unmonitorable);
+        || (el.dataset.unmonitorable !== undefined && !view.unmonitorable)
+        || (el.dataset.archivable !== undefined && view.archivable === false);
     }
     for (const el of this.shadowRoot.querySelectorAll("[data-only-view]")) {
-      const shownByTab = !el.matches("[data-show], [data-ignorable], [data-unmonitorable]") || !el.hidden;
+      const shownByTab = !el.matches("[data-show], [data-ignorable], [data-unmonitorable], [data-archivable]") || !el.hidden;
       el.hidden = !el.dataset.onlyView.split(" ").includes(this._view) || !shownByTab;
     }
 
@@ -1091,6 +1169,7 @@ class LogDoctorPanel extends HTMLElement {
       else if (this._view === "backups") this._backupCells(tr, r);
       else if (this._view === "health") this._healthCells(tr, r);
       else if (this._view === "reboots") this._rebootCells(tr, r);
+      else if (this._view === "runs") this._runCells(tr, r);
       else this._failureCells(tr, r);
       if (archived) {
         const td = this._td("", "when");
@@ -1111,7 +1190,7 @@ class LogDoctorPanel extends HTMLElement {
       if (st.tab === "unmonitored") {
         const td = this._td("", "when");
         td.title = "Nothing about it has been reported since";
-        td.append(this._label("Not monitored since "), this._dateTime(r.unmonitored));
+        td.append(this._label(`${view.unmonitoredSince || "Not monitored since"} `), this._dateTime(r.unmonitored));
         tr.appendChild(td);
       }
       if (ignoredTab) {
@@ -1186,13 +1265,23 @@ class LogDoctorPanel extends HTMLElement {
     unignoreBtn.disabled = n === 0;
     unignoreBtn.textContent = n ? `Stop ignoring ${n}` : "Stop ignoring";
     // Only devices (and entities with no device) can be left unmonitored.
-    const devices = rows.filter((r) => st.selected.has(r.id) && DEVICE_KINDS.includes(r.kind)).length;
+    const devices = rows.filter((r) => st.selected.has(r.id) && (view.unmonitorKinds || []).includes(r.kind)).length;
     const unmonitorBtn = this.shadowRoot.querySelector('[data-action="unmonitor"]');
-    unmonitorBtn.disabled = devices === 0;
-    unmonitorBtn.textContent = devices ? `Don't monitor ${devices}` : "Don't monitor";
     const monitorBtn = this.shadowRoot.querySelector('[data-action="monitor"]');
+    unmonitorBtn.disabled = devices === 0;
     monitorBtn.disabled = n === 0;
-    monitorBtn.textContent = n ? `Monitor ${n} again` : "Monitor again";
+    if (view.unmonitorLabels) {
+      // e.g. Exclude automation / Include again (Automations: Runs).
+      const [off, on] = view.unmonitorLabels;
+      unmonitorBtn.textContent = devices ? `${off} (${devices})` : off;
+      monitorBtn.textContent = n ? `${on} (${n})` : on;
+      [unmonitorBtn.title, monitorBtn.title] = view.unmonitorTitles || ["", ""];
+    } else {
+      unmonitorBtn.textContent = devices ? `Don't monitor ${devices}` : "Don't monitor";
+      monitorBtn.textContent = n ? `Monitor ${n} again` : "Monitor again";
+      unmonitorBtn.title = "Stop reporting these devices altogether, whatever becomes unavailable or isn't provided any more; they're listed on the Not monitored tab";
+      monitorBtn.title = "Report these devices again; they're checked straight away";
+    }
     const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
     copyBtn.disabled = n === 0;
     if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
@@ -1537,6 +1626,43 @@ class LogDoctorPanel extends HTMLElement {
     return tr;
   }
 
+  // Automations: Runs rows - when it ran, which automation, what triggered it.
+  _runCells(tr, r) {
+    const tdWhen = this._td("", "when");
+    tdWhen.append(this._label(r.kind === "excluded" ? "Last run " : "Ran "), this._dateTime(r.when));
+    tr.appendChild(tdWhen);
+
+    const tdName = document.createElement("td");
+    if (r.config_id) {
+      const a = document.createElement("a");
+      a.href = `/config/automation/trace/${encodeURIComponent(r.config_id)}`;
+      a.dataset.nav = "1";
+      a.title = "Open this automation's traces";
+      a.textContent = r.name;
+      tdName.appendChild(a);
+    } else {
+      tdName.appendChild(document.createTextNode(r.name));
+    }
+    const ent = document.createElement("div");
+    ent.className = "sub";
+    ent.textContent = r.entity_id;
+    tdName.appendChild(ent);
+    tr.appendChild(tdName);
+
+    const tdTrigger = this._td("", "text");
+    tdTrigger.append(this._label("Trigger "));
+    if (r.kind === "excluded") {
+      tdTrigger.append("—");
+    } else if (r.manual) {
+      const chip = this._chip("script", "Manual");
+      chip.title = "Run by hand: the Run button or the automation.trigger action";
+      tdTrigger.appendChild(chip);
+    } else {
+      tdTrigger.append(r.trigger || "");
+    }
+    tr.appendChild(tdTrigger);
+  }
+
   _failureCells(tr, r) {
     const tdDate = this._td(this._date(r.when), "when");
     tr.appendChild(tdDate);
@@ -1869,7 +1995,7 @@ class LogDoctorPanel extends HTMLElement {
       case "monitor": {
         const unmonitor = btn.dataset.action === "unmonitor";
         const ids = unmonitor
-          ? this._visible().filter((r) => st.selected.has(r.id) && DEVICE_KINDS.includes(r.kind)).map((r) => r.id)
+          ? this._visible().filter((r) => st.selected.has(r.id) && (VIEWS[this._view].unmonitorKinds || []).includes(r.kind)).map((r) => r.id)
           : selectedIds();
         if (ids.length && (await this._call(unmonitor ? WS.UNMONITOR : WS.MONITOR, { ids }))) {
           for (const id of ids) st.selected.delete(id);
@@ -1975,7 +2101,7 @@ const SETTINGS_SECTIONS = [
       { key: "include_supervisor_logs", label: "Also check Supervisor, Host and add-on logs", help: "Home Assistant OS / Supervised only.", type: "bool" },
       { key: "restart_grace_minutes", label: "Count as startup messages until this long after starting", type: "number", min: 0, max: 60, unit: "minutes", help: "Messages logged from Home Assistant starting until this long after it has finished starting (and while it shuts down) go on Startup & shutdown." },
       { key: "restart_history_open_entries", label: "Restarts kept open on Restart history", type: "number", min: 1, max: 500, help: "Older ones are archived automatically." },
-      { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review, Automation failures and Backups entries are kept." },
+      { key: "report_retention_days", label: "Keep reports and list entries for", type: "number", min: 1, max: 365, unit: "days", help: "Also how long Log review, automation failures and runs, and Backups entries are kept." },
     ],
   },
   {

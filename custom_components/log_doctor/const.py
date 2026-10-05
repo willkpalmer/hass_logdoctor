@@ -79,6 +79,7 @@ DATA_ANOMALY_STORE = f"{DOMAIN}_anomaly_store"
 DATA_HEALTH_STORE = f"{DOMAIN}_health_store"
 DATA_BACKUP_STORE = f"{DOMAIN}_backup_store"
 DATA_RESTART_HISTORY = f"{DOMAIN}_restart_history"
+DATA_RUN_STORE = f"{DOMAIN}_automation_runs"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
 # The Log Doctor sidebar panel (see panel.py / frontend/), with a "Log
@@ -92,6 +93,7 @@ PANEL_STATIC_URL = "/log_doctor_static"
 PANEL_MODULE_FILE = "log-doctor-panel.js"
 PANEL_LOGS_URL = f"/{PANEL_URL_PATH}#logs"
 PANEL_FAILURES_URL = f"/{PANEL_URL_PATH}#failures"
+PANEL_RUNS_URL = f"/{PANEL_URL_PATH}#runs"
 PANEL_BACKUPS_URL = f"/{PANEL_URL_PATH}#backups"
 PANEL_RESTARTS_URL = f"/{PANEL_URL_PATH}#restarts"
 # 0.17.0's standalone "Automation failures" panel. Still registered (hidden

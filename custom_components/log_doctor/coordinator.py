@@ -49,6 +49,7 @@ from .log_parser import (
     parse_supervisor_log_text,
 )
 from .anomaly_store import AnomalyStore
+from .automation_runs import AutomationRunStore
 from .backup_store import BackupStore
 from .backups import is_backup_success, is_gdrive_addon, split_backup_entries
 from .failure_store import FailureStore
@@ -85,6 +86,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         health_store: HealthStore | None = None,
         backup_store: BackupStore | None = None,
         restarts: RestartTracker | None = None,
+        run_store: AutomationRunStore | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -102,6 +104,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.health_store = health_store
         self.backup_store = backup_store
         self.restarts = restarts
+        self.run_store = run_store
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -220,6 +223,9 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             # Old automation failures go on the same retention window as
             # old reports.
             await self.failure_store.async_prune(self.report_retention_days)
+        if self.run_store is not None:
+            # And so do the recorded automation runs.
+            await self.run_store.async_prune(self.report_retention_days)
 
         self.store.data.last_scan = now
         self.store.data.last_summary = build_scan_summary(result)

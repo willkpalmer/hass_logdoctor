@@ -44,6 +44,7 @@ from .const import (
     CONF_RESTART_HISTORY_OPEN,
     DEFAULT_RESTART_HISTORY_OPEN,
     DATA_RESTART_HISTORY,
+    DATA_RUN_STORE,
     CONF_MOBILE_NOTIFY_SERVICE,
     CONF_MONITOR_AUTOMATIONS,
     CONF_MONITOR_MISSED_SCHEDULES,
@@ -71,6 +72,7 @@ from .const import (
     SERVICE_SCAN_NOW,
 )
 from .automation_monitor import AutomationFailureMonitor
+from .automation_runs import AutomationRunStore, async_record_runs
 from .coordinator import LogDoctorCoordinator
 from .knowledge_base import async_warm_known_issues
 from .missed_schedules import MissedScheduleWatch
@@ -156,6 +158,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         mobile_notify = mobile_notify.removeprefix("notify.")
 
     log_path = options.get(CONF_LOG_PATH) or hass.config.path("home-assistant.log")
+    # Every automation run, for the panel's Automations page (Runs).
+    run_store = AutomationRunStore(hass)
+    await run_store.async_load()
+    await run_store.async_prune(
+        int(options.get(CONF_REPORT_RETENTION_DAYS, DEFAULT_REPORT_RETENTION_DAYS))
+    )
+    hass.data[DATA_RUN_STORE] = run_store
+    entry.async_on_unload(async_record_runs(hass, run_store))
     # The panel's Restart history view.
     restart_history = RestartHistoryStore(hass)
     await restart_history.async_load()
@@ -198,6 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         health_store=health_store,
         backup_store=backup_store,
         restarts=restarts,
+        run_store=run_store,
     )
 
     hass.data.setdefault(DOMAIN, {})
@@ -292,6 +303,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             DATA_HEALTH_STORE,
             DATA_BACKUP_STORE,
             DATA_RESTART_HISTORY,
+            DATA_RUN_STORE,
         ):
             if (review_list := hass.data.pop(key, None)) is not None:
                 await review_list.async_shutdown()

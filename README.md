@@ -268,8 +268,9 @@ Limits:
 A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
 works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
-(or go straight to `/log-doctor#logs`, `#restarts`, `#failures`,
-`#health`, `#backups` or `#reboots`); each shows how many entries are still open.
+(or go straight to `/log-doctor#logs`, `#restarts`, `#failures` or
+`#runs` (the Automations page's two sections), `#health`, `#backups` or
+`#reboots`); each shows how many entries are still open.
 **Scan now**, at the end of that row, runs a scan straight away (as the
 daily scan does) from any page; the lists update as soon as it's done, and
 the button briefly shows how many new anomalies it found. The scan's
@@ -286,7 +287,7 @@ The lists work the same way:
 - **Archived** tab: resolved entries, with when they were resolved.
   **Restore to open** moves selected ones back; **Clear archive** (after a
   confirmation) permanently deletes every archived entry.
-- **Ignored** tab (all but Automation failures and Restart history; see
+- **Ignored** tab (all but Automations and Restart history; see
   [Devices & integrations](#devices--integrations) for how it works there): for entries that keep
   coming back but aren't a problem, or that you can't do anything about.
   **Ignore** moves selected open or archived entries here so they stop
@@ -378,7 +379,12 @@ scan's notification ("New startup/shutdown messages: 2"), with a link
 here, and listed in the scan's report file after the others (so the
 investigation stage gets to them last).
 
-### Automation failures
+### Automations
+
+One page, `/log-doctor#failures`, with two sections - switch between
+them at the top: **Failures** and **Runs**.
+
+#### Failures
 
 Failed automation and script runs, and automation runs missed while Home
 Assistant was offline. Columns: **Date**, **Time** (sorts by time of day,
@@ -387,6 +393,25 @@ script** (links to its traces; scripts are marked **Script**) and
 **Reason**; filter to failed runs, missed runs or scripts only. A script
 that fails when called from an automation appears twice - once for each,
 since both runs failed.
+
+#### Runs
+
+Every automation run, recorded as it happens (`/log-doctor#runs`), newest
+first: **Ran** (when its actions started - runs stopped by their
+conditions aren't included), **Automation** (links to its traces) and
+**Trigger** - Home Assistant's description of what triggered it, such as
+"state of binary_sensor.motion" or "time pattern", or **Manual** when it
+was run by hand (the Run button or the `automation.trigger` action).
+Filter by automation or trigger, or to triggered or manual runs only.
+
+Runs are kept for the same time as reports and list entries (Settings,
+default 30 days), up to 10,000; older ones are removed with each scan.
+
+**Exclude automation** removes the selected runs' automations from the
+list - their runs are deleted and no more are recorded - and lists them
+on the **Excluded** tab with their last run and when they were excluded.
+**Include again** starts recording their runs again. Runs aren't marked
+resolved, so this section has no Archived tab.
 
 ### Devices & integrations
 
@@ -610,7 +635,7 @@ step with this page.
 
 ## Automation failure log
 
-The Automation failures list is also written to the Markdown file
+The automation failures list (Automations → Failures) is also written to the Markdown file
 `<config>/logdoctor/automation_failures.md` - Log Doctor's main folder,
 whose `reviews/` subfolder holds the [retained reports](#retained-reports) -
 so it can be read outside Home Assistant too. It's rewritten to match the

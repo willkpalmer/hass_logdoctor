@@ -8,13 +8,16 @@ a "list" field:
 - "health" - the Devices & integrations view (health_store.py)
 - "backups" - the Backups view (backup_store.py)
 - "restart_history" - the Restart history view (restart_history.py)
+- "automation_runs" - the Automations page's Runs (automation_runs.py)
 
 log_doctor/review/ignore and log_doctor/review/unignore move entries of the
 lists that support it ("anomalies" and "backups") to and from their
 Ignored tab.
 
 log_doctor/review/unmonitor and log_doctor/review/monitor stop and resume
-monitoring devices on the Devices & integrations view ("health").
+monitoring devices on the Devices & integrations view ("health"), and
+exclude and include automations on the Automations page's Runs
+("automation_runs").
 
 log_doctor/review/set_category moves Log review entries between the Log
 review ("operational") and Startup & shutdown ("restart") views.
@@ -46,6 +49,7 @@ from .const import (
     DATA_FAILURE_STORE,
     DATA_HEALTH_STORE,
     DATA_RESTART_HISTORY,
+    DATA_RUN_STORE,
 )
 from .review_list import ReviewList
 
@@ -67,6 +71,7 @@ _LISTS = {
     "health": DATA_HEALTH_STORE,
     "backups": DATA_BACKUP_STORE,
     "restart_history": DATA_RESTART_HISTORY,
+    "automation_runs": DATA_RUN_STORE,
 }
 _LIST = vol.In(list(_LISTS))
 _IDS = vol.All([str], vol.Length(max=100_000))
