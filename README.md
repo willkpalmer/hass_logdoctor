@@ -402,7 +402,13 @@ conditions aren't included), **Automation** (links to its traces) and
 **Trigger** - Home Assistant's description of what triggered it, such as
 "state of binary_sensor.motion" or "time pattern", or **Manual** when it
 was run by hand (the Run button or the `automation.trigger` action).
-Filter by automation or trigger, or to triggered or manual runs only.
+Filter by automation or trigger, or to triggered or manual runs only, and
+by time: **Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24
+hours** (or all recorded runs).
+
+Runs are grouped by day, newest first - **Today**, **Yesterday**, then the
+weekday and date - with each run's time. Click a day's heading to collapse
+it, or **Collapse all**; its checkbox selects all of that day's runs.
 
 Runs are kept for the same time as reports and list entries (Settings,
 default 30 days), up to 10,000; older ones are removed with each scan.

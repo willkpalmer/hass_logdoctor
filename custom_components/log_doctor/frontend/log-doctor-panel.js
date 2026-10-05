@@ -298,6 +298,13 @@ const TEMPLATE = `
     <div class="toolbar">
       <input type="search" data-el="filter">
       <select data-el="kind" title="Show"></select>
+      <select data-el="hours" data-only-view="runs" data-show="open" title="Show runs from">
+        <option value="0">All recorded runs</option>
+        <option value="1">Last hour</option>
+        <option value="6">Last 6 hours</option>
+        <option value="12">Last 12 hours</option>
+        <option value="24">Last 24 hours</option>
+      </select>
       <span class="spacer"></span>
       <button class="action secondary" data-action="copy-prompt" data-only-view="logs restarts" disabled
         title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
@@ -305,8 +312,8 @@ const TEMPLATE = `
         title="These only happen when Home Assistant starts or stops: move them to Startup &amp; shutdown">Move to Startup &amp; shutdown</button>
       <button class="action secondary" data-action="to-operational" data-only-view="restarts" disabled
         title="Move these to the Log review">Move to Log review</button>
-      <button class="action secondary" data-action="toggle-groups" data-only-view="health"
-        title="Collapse or expand every integration">Collapse all</button>
+      <button class="action secondary" data-action="toggle-groups" data-only-view="health runs"
+        title="Collapse or expand every group">Collapse all</button>
       <button class="action secondary" data-action="ignore" data-show="open archived" data-ignorable disabled
         title="Stop showing these here; they keep being tracked on the Ignored tab">Ignore</button>
       <button class="action secondary" data-action="unignore" data-show="ignored" disabled
@@ -545,6 +552,15 @@ const VIEWS = {
     kindOf: (r) => (r.manual ? "manual" : "triggered"),
     search: (r) => `${r.name} ${r.entity_id} ${r.manual ? "Manual" : r.trigger || ""}`,
     defaultSort: { key: "when", dir: -1 },
+    // Grouped by day (in Home Assistant's time zone), newest first, each
+    // collapsible; the day is worked out once per update (see _onMessage).
+    decorate: (r, panel) => { r._day = panel._date(r.when); },
+    groupBy: (r) => r._day || OTHER_GROUP,
+    groupSort: (a, b) => b.localeCompare(a),
+    groupLabel: (day, panel) => panel._dayLabel(day),
+    groupNoun: "day",
+    // The Last 1 / 6 / 12 / 24 hours drop-down (runs, not the Excluded tab).
+    timeWindow: true,
     empty: {
       open: "No automation runs recorded yet. Every automation run appears here as it happens.",
       unmonitored: "No automations excluded. Runs of automations you exclude stop being recorded, and they appear here until you include them again.",
@@ -726,6 +742,7 @@ class LogDoctorPanel extends HTMLElement {
         collapsed: this._loadCollapsed(name),
         filter: "",
         kind: "",
+        hours: 0,
         limit: PAGE_SIZE,
       };
     }
@@ -809,6 +826,7 @@ class LogDoctorPanel extends HTMLElement {
     const filter = this._el("filter");
     filter.placeholder = view.filterPlaceholder;
     filter.value = st.filter;
+    this._el("hours").value = String(st.hours || 0);
     const kind = this._el("kind");
     kind.textContent = "";
     for (const [value, label] of view.kinds) {
@@ -983,6 +1001,10 @@ class LogDoctorPanel extends HTMLElement {
     const st = this._st();
     const needle = st.filter.trim().toLowerCase();
     let rows = st.records.filter((r) => tabOf(r) === st.tab);
+    if (view.timeWindow && st.hours && st.tab === "open") {
+      const since = new Date(Date.now() - st.hours * 3600 * 1000).toISOString();
+      rows = rows.filter((r) => new Date(r.when).toISOString() >= since);
+    }
     if (st.kind) rows = rows.filter((r) => (view.matches ? view.matches(r, st.kind) : view.kindOf(r) === st.kind));
     if (needle) rows = rows.filter((r) => view.search(r).toLowerCase().includes(needle));
     const primary = this._compare(st.sort.key);
@@ -1001,8 +1023,8 @@ class LogDoctorPanel extends HTMLElement {
         if (name === OTHER_GROUP) return 9;
         return view.groupRank ? Math.min(...groups.get(name).map(view.groupRank)) : 0;
       };
-      const names = [...groups.keys()].sort((a, b) =>
-        rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: "base" }));
+      const names = [...groups.keys()].sort(view.groupSort || ((a, b) =>
+        rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: "base" })));
       rows = names.flatMap((name) => groups.get(name));
     }
     return rows;
@@ -1121,7 +1143,8 @@ class LogDoctorPanel extends HTMLElement {
         const trGroup = document.createElement("tr");
         trGroup.className = "group";
         trGroup.dataset.groupToggle = lastGroup;
-        trGroup.title = collapsed ? "Show this integration's entries" : "Hide this integration's entries";
+        const noun = view.groupNoun || "integration";
+        trGroup.title = collapsed ? `Show this ${noun}'s entries` : `Hide this ${noun}'s entries`;
         // A checkbox selecting every entry under the heading (not while
         // collapsed: nothing hidden is selected - see _collapse).
         const groupRows = rows.filter((g) => view.groupBy(g) === lastGroup);
@@ -1134,7 +1157,7 @@ class LogDoctorPanel extends HTMLElement {
         groupCb.checked = groupSelected > 0 && groupSelected === groupRows.length;
         groupCb.indeterminate = groupSelected > 0 && groupSelected < groupRows.length;
         groupCb.disabled = collapsed;
-        groupCb.title = collapsed ? "Expand this integration to select its entries" : "Select all of this integration's entries";
+        groupCb.title = collapsed ? `Expand this ${noun} to select its entries` : `Select all of this ${noun}'s entries`;
         tdCheck.appendChild(groupCb);
         trGroup.appendChild(tdCheck);
         const td = document.createElement("td");
@@ -1142,7 +1165,7 @@ class LogDoctorPanel extends HTMLElement {
         const caret = document.createElement("span");
         caret.className = "caret";
         caret.textContent = collapsed ? "▸" : "▾";
-        td.append(caret, lastGroup);
+        td.append(caret, view.groupLabel ? view.groupLabel(lastGroup, this) : lastGroup);
         const count = document.createElement("span");
         count.className = "group-count";
         count.textContent = ` (${groupSizes.get(lastGroup)})`;
@@ -1627,9 +1650,24 @@ class LogDoctorPanel extends HTMLElement {
   }
 
   // Automations: Runs rows - when it ran, which automation, what triggered it.
+  // "Today", "Yesterday" or e.g. "Saturday", then the date - a day heading.
+  _dayLabel(day) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+    const today = this._date(new Date().toISOString());
+    const yesterday = this._date(new Date(Date.now() - 86400000).toISOString());
+    if (day === today) return `Today · ${day}`;
+    if (day === yesterday) return `Yesterday · ${day}`;
+    const weekday = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+    return `${weekday} · ${day}`;
+  }
+
   _runCells(tr, r) {
+    // The day is the group's heading, so runs show the time; the Excluded
+    // tab's "last run" keeps its date.
     const tdWhen = this._td("", "when");
-    tdWhen.append(this._label(r.kind === "excluded" ? "Last run " : "Ran "), this._dateTime(r.when));
+    tdWhen.append(this._label(r.kind === "excluded" ? "Last run " : "Ran "),
+      r.kind === "excluded" ? this._dateTime(r.when) : this._time(r.when));
+    tdWhen.title = this._dateTime(r.when);
     tr.appendChild(tdWhen);
 
     const tdName = document.createElement("td");
@@ -1850,6 +1888,10 @@ class LogDoctorPanel extends HTMLElement {
       this._render();
     } else if (target.dataset.el === "kind") {
       st.kind = target.value;
+      st.limit = PAGE_SIZE;
+      this._render();
+    } else if (target.dataset.el === "hours") {
+      st.hours = Number(target.value) || 0;
       st.limit = PAGE_SIZE;
       this._render();
     }
