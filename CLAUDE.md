@@ -6,6 +6,16 @@ When a change is complete, commit it (with a clear, descriptive message) and
 push it to the working branch straight away. Don't leave finished work
 uncommitted in the working tree.
 
+## Check changes before committing
+
+Run the tests (`pytest`, see `requirements_test.txt`; CI runs them on
+every push) and, for panel changes, `node --check` each file in
+`custom_components/log_doctor/frontend/` and look at the page in a
+browser. The panel is plain JavaScript modules with no build step:
+`log-doctor-panel.js` loads the others with its own `?v=` query, and each
+module imports the ones it needs the same way, so they're never mixed
+across versions.
+
 ## Only release when asked
 
 Don't create a release unless the user explicitly asks for one. Until

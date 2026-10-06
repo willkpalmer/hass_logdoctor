@@ -24,6 +24,7 @@ from .const import LATEST_FINDINGS_FILENAME
 
 _LOGGER = logging.getLogger(__name__)
 
+# The default model; Settings can choose another (CONF_INVESTIGATION_MODEL).
 MODEL = "gpt-6-astra"
 
 _LEVEL_EMOJI = {"WARNING": "⚠️", "ERROR": "🛑", "CRITICAL": "🔴"}
@@ -170,12 +171,12 @@ def build_copy_prompt(anomalies: list[Anomaly]) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-async def _async_research_anomaly(client: AsyncOpenAI, anomaly: Anomaly) -> str:
+async def _async_research_anomaly(client: AsyncOpenAI, anomaly: Anomaly, model: str = MODEL) -> str:
     """Ask the model to research one anomaly and return its findings as text."""
     user_prompt = build_user_prompt(anomaly)
 
     response = await client.responses.create(
-        model=MODEL,
+        model=model,
         instructions=SYSTEM_PROMPT,
         input=user_prompt,
         tools=[{"type": "web_search"}],
@@ -185,11 +186,13 @@ async def _async_research_anomaly(client: AsyncOpenAI, anomaly: Anomaly) -> str:
     return text or "No information available"
 
 
-def _build_findings_markdown(source_path: Path, findings: list[tuple[Anomaly, str]]) -> str:
+def _build_findings_markdown(
+    source_path: Path, findings: list[tuple[Anomaly, str]], model: str = MODEL
+) -> str:
     lines = [
         "# Log Doctor Investigation findings",
         "",
-        f"_Researched from `{source_path}` using {MODEL}._",
+        f"_Researched from `{source_path}` using {model}._",
     ]
 
     if not findings:
@@ -241,6 +244,7 @@ async def async_investigate_report(
     openai_api_key: str,
     max_investigated: int,
     report_retention_days: int,
+    model: str = MODEL,
 ) -> InvestigationResult:
     """Research every anomaly in a just-written report with an OpenAI model.
 
@@ -265,10 +269,16 @@ async def async_investigate_report(
     results: list[tuple[Anomaly, str]] = []
     for anomaly in anomalies:
         try:
-            findings = await _async_research_anomaly(client, anomaly)
+            findings = await _async_research_anomaly(client, anomaly, model)
         except openai.AuthenticationError as err:
             return InvestigationResult(
                 error=f"Authentication with OpenAI failed: {err}"
+            )
+        except openai.NotFoundError as err:
+            # Most likely a model that doesn't exist (any more): every
+            # other anomaly would fail the same way.
+            return InvestigationResult(
+                error=f"OpenAI couldn't find the model {model!r} - choose another in Settings ({err.message})"
             )
         except openai.APIStatusError as err:
             findings = f"No information available (OpenAI API error: {err.status_code} {err.message})"
@@ -276,7 +286,7 @@ async def async_investigate_report(
             findings = f"No information available (network error: {err})"
         results.append((anomaly, findings))
 
-    findings_markdown = _build_findings_markdown(report_path, results)
+    findings_markdown = _build_findings_markdown(report_path, results, model)
     try:
         findings_file = await hass.async_add_executor_job(
             _write_findings_sync, report_path, findings_markdown, report_retention_days

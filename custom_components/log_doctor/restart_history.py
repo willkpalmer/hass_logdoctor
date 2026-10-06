@@ -5,7 +5,8 @@ with one record per Home Assistant restart recorded by restarts.py - the
 windows it uses to tell startup and shutdown messages from the rest:
 
     {"id" (= the run's id), "shutdown_start", "starting", "started",
-     "window_end", "unclean", "current", "resolved", "auto_archived"}
+     "window_end", "unclean", "current", "resolved", "auto_archived",
+     "messages", "errors", "signatures"}
 
 - shutdown_start - when the previous run's clean shutdown began (None if
   it didn't shut down cleanly - unclean - or wasn't recorded); shutdown
@@ -14,6 +15,12 @@ windows it uses to tell startup and shutdown messages from the rest:
   window_end is started plus the startup grace period, until when messages
   count as startup messages.
 - current - the run Home Assistant is in now.
+- messages / errors - how many log lines at or above the minimum severity
+  (errors: of them, errors and critical) the scans found in this restart's
+  shutdown and startup windows; signatures the distinct anomalies they
+  belong to (see anomaly_store.py), so the panel can show the restart's
+  impact. Added by each scan (async_add_impact), which only reads lines
+  logged since the previous one, so nothing is counted twice.
 
 Times are UTC. The history is a copy for display: archiving or deleting
 entries here doesn't change how log messages are classified. Only the
@@ -35,6 +42,8 @@ if TYPE_CHECKING:
 
 # Ids of deleted entries remembered (more than the restart timeline keeps).
 _MAX_DELETED = 200
+# Distinct anomalies remembered per restart.
+_MAX_SIGNATURES = 200
 
 
 def _utc(value: datetime | None) -> str | None:
@@ -95,6 +104,26 @@ class RestartHistoryStore(ReviewList):
         changed |= self._auto_archive(open_limit)
         if changed:
             self.async_trim()
+            self.async_changed()
+
+    async def async_add_impact(self, impact: dict[str, dict[str, Any]]) -> None:
+        """Add a scan's messages to the restarts they were logged during.
+
+        impact: {run id: {"lines", "errors", "signatures" (a set)}}.
+        """
+        by_id = {record["id"]: record for record in self._records}
+        changed = False
+        for run_id, tally in impact.items():
+            record = by_id.get(run_id)
+            if record is None:
+                continue
+            record["messages"] = record.get("messages", 0) + tally["lines"]
+            record["errors"] = record.get("errors", 0) + tally["errors"]
+            signatures = list(record.get("signatures") or [])
+            signatures.extend(sorted(set(tally["signatures"]) - set(signatures)))
+            record["signatures"] = signatures[-_MAX_SIGNATURES:]
+            changed = True
+        if changed:
             self.async_changed()
 
     def _auto_archive(self, open_limit: int) -> bool:

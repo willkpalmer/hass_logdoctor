@@ -21,7 +21,13 @@
           "offline_hours": "Report devices offline for at least (hours)",
           "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
-          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
+          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)",
+          "monitor_stopped_automations": "Tell me when an automation that usually runs regularly stops running",
+          "flap_count": "Report devices that go unavailable at least this many times (0 = off)…",
+          "flap_hours": "…within this many hours",
+          "weekly_digest": "Send a weekly digest",
+          "weekly_digest_day": "Weekly digest day (sent after that day's scan)",
+          "investigation_model": "OpenAI model used for investigations"
         }
       }
     },
@@ -50,9 +56,42 @@
           "offline_hours": "Report devices offline for at least (hours)",
           "automation_failure_notify_device": "Also push automation failures and missed schedules to this phone (Mobile App device, optional)",
           "openai_api_key": "OpenAI API key (optional - enables automatic investigation of each scan's anomalies)",
-          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)"
+          "max_investigated": "Max anomalies investigated per scan (only used when an OpenAI API key is set)",
+          "monitor_stopped_automations": "Tell me when an automation that usually runs regularly stops running",
+          "flap_count": "Report devices that go unavailable at least this many times (0 = off)…",
+          "flap_hours": "…within this many hours",
+          "weekly_digest": "Send a weekly digest",
+          "weekly_digest_day": "Weekly digest day (sent after that day's scan)",
+          "investigation_model": "OpenAI model used for investigations"
         }
       }
+    }
+  },
+  "selector": {
+    "weekday": {
+      "options": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday"
+      }
+    }
+  },
+  "services": {
+    "scan_now": {
+      "name": "Scan now",
+      "description": "Immediately scan the Home Assistant log for anomalies, outside of the daily schedule. Only reports findings - never changes any configuration."
+    },
+    "clear_history": {
+      "name": "Clear history",
+      "description": "Forget which anomalies have already been reported. The next scan will treat everything it finds as new."
+    },
+    "send_weekly_digest": {
+      "name": "Send weekly digest",
+      "description": "Send the weekly digest (the last seven days) now, as a notification and to the daily summary's notify service if one is set."
     }
   }
 }

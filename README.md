@@ -72,12 +72,17 @@ report, never a change.
    see [Automation failure alerts](#automation-failure-alerts) below.
 7. **After every restart, it checks for scheduled automations that were
    missed while Home Assistant was offline** - see
-   [Missed schedule alerts](#missed-schedule-alerts) below.
+   [Missed schedule alerts](#missed-schedule-alerts) below - **and it
+   notices automations that usually run regularly but have stopped** - see
+   [Stopped automation alerts](#stopped-automation-alerts).
 8. **Everything it reports - log anomalies, automation failures, device
-   and integration problems, and backups - is collected on a "Log Doctor"
-   page in the sidebar**, where you can sort
-   and filter them, mark them resolved (moving them to an archive) and
-   clear the archive - see [Log Doctor panel](#log-doctor-panel) below.
+   and integration problems (flapping devices included), and backups - is
+   collected on a "Log Doctor" page in the sidebar**, where you can sort,
+   filter, archive, ignore and export them - see
+   [Log Doctor panel](#log-doctor-panel) below - with an
+   [Insights](#insights) page charting warnings and errors over time, and a
+   [weekly digest](#weekly-digest) of the week, the noisiest integrations
+   included.
 9. **If you've configured an OpenAI API key**, the scan's report then
    automatically goes through the
    [investigation stage](#investigation-stage): every anomaly gets
@@ -138,6 +143,14 @@ not something wrong with this repository; a fix is up as
      [Automation failure alerts](#automation-failure-alerts) below.
    - **After a restart, tell me about missed schedules** — on by default;
      see [Missed schedule alerts](#missed-schedule-alerts) below.
+   - **Tell me when an automation that usually runs regularly stops
+     running** — on by default; see
+     [Stopped automation alerts](#stopped-automation-alerts).
+   - **Report devices that go unavailable at least … times within …
+     hours** — default 3 times in 24 hours (0 turns it off); see
+     [Devices & integrations](#devices--integrations).
+   - **Send a weekly digest** and **Weekly digest day** — on, Monday by
+     default; see [Weekly digest](#weekly-digest).
    - **Skip time pattern triggers that repeat more often than every …
      minutes** — default 15; 0 checks every pattern. See
      [Missed schedule alerts](#missed-schedule-alerts).
@@ -148,6 +161,8 @@ not something wrong with this repository; a fix is up as
      [investigation stage](#investigation-stage) after every scan. Leave
      it blank to skip investigation entirely (the companion app remains
      available on demand either way).
+   - **OpenAI model** — the model the investigation stage uses (default
+     `gpt-6-astra`); change it if OpenAI retires that one.
    - **Max anomalies investigated per scan** — a per-scan cap on OpenAI
      calls, so one very noisy scan can't run away with your API bill. Only
      used when an OpenAI API key is set.
@@ -263,30 +278,64 @@ Limits:
   was no heartbeat yet), or when only the integration is reloaded (Home
   Assistant itself never went down).
 
+## Stopped automation alerts
+
+An automation whose trigger has stopped working - a renamed entity, a
+sensor that no longer updates, a webhook nothing calls any more - doesn't
+fail: it just never runs again, and nothing says so. With **Tell me when
+an automation that usually runs regularly stops running** on (the
+default), Log Doctor looks at the runs it records for the
+[Runs](#runs) list every 30 minutes and reports an automation as stopped
+when it hasn't run for much longer than it ever has before:
+
+- It needs at least 8 recorded runs, so there's a pattern to go by.
+- "Much longer" is the longest of: three times its usual (median) time
+  between runs, one and a half times the longest gap on record, and an
+  hour. So an automation that runs irregularly - on motion or presence -
+  isn't reported for a quiet spell like ones it's had before.
+- Automations that are turned off, not monitored on the Runs list, or gone
+  aren't checked.
+
+Each one is reported once per quiet spell: as an entry on
+[Failures](#failures) ("Stopped: hasn't run for 9 h - it usually runs
+every 1 h (longest gap before: 2 h)"), with a persistent notification
+("Automations that stopped running") and, if a phone is chosen for
+automation failures, a push. It's reported again only after it has run
+again and gone quiet again. Runs are only recorded while Home Assistant is
+running, so a long outage can look like a quiet spell.
+
 ## Log Doctor panel
 
 A **Log Doctor** page in Home Assistant's sidebar (admins only; it also
 works in the Companion app) collects everything Log Doctor reports into
 lists you can work through. Switch between them with the buttons at the top
 (or go straight to `/log-doctor#logs`, `#restarts`, `#failures` or
-`#runs` (the Automations page's two sections), `#health`, `#backups` or
-`#reboots`); each shows how many entries are still open.
+`#runs` (the Automations page's two sections), `#health`, `#backups`,
+`#reboots`, `#insights` or `#settings`). Each list's button shows how many
+entries are open, in red when any of them is an error (an error or
+critical log message, an automation failure, an offline device or a
+failed integration, a backup problem).
 **Scan now**, at the end of that row, runs a scan straight away (as the
 daily scan does) from any page; the lists update as soon as it's done, and
-the button briefly shows how many new anomalies it found. The scan's
+the button briefly shows how many new anomalies it found. The header shows
+when the last scan ran, how many new anomalies it found and how many lines
+it read - with a warning when it failed or a log source couldn't be read
+(hover for which); click it for the details on Settings. The scan's
 notification links to the Log review (and to Backups when it found new
 backup problems), and each automation failure notification to the failures
 list.
 
-The lists work the same way:
+The lists work the same way, with the same buttons; a line under the tabs
+says what the current tab holds:
 
 - **Open** tab: everything not yet dealt with. Click a column header to
   sort by it; click again to reverse. Filter by text, or with the drop-down.
   Tick one or more rows (or the header box for everything shown) and
-  **Mark resolved** to move them to the archive.
-- **Archived** tab: resolved entries, with when they were resolved.
-  **Restore to open** moves selected ones back; **Clear archive** (after a
-  confirmation) permanently deletes every archived entry.
+  **Archive** them once they're dealt with.
+- **Archived** tab: archived entries, with when they were archived.
+  **Restore** moves selected ones back to Open; **Delete** (after a
+  confirmation) permanently deletes the selected ones, and **Delete all
+  archived** every one.
 - **Ignored** tab (all but Automations and Restart history; see
   [Devices & integrations](#devices--integrations) for how it works there): for entries that keep
   coming back but aren't a problem, or that you can't do anything about.
@@ -297,6 +346,22 @@ The lists work the same way:
   **Since ignored**, with its latest log lines under ▸. Ignored entries
   never come back by themselves and aren't pruned; **Stop ignoring**
   moves them back to the open list. (Also on Startup & shutdown.)
+- **Not monitored** tab (Devices & integrations, and Automations → Runs):
+  devices and automations you've told Log Doctor to stop watching with
+  **Stop monitoring**; **Monitor again** brings them back.
+- **Undo**: after Archive, Restore, Ignore, Stop ignoring or a move
+  between the Log review and Startup & shutdown, a bar at the bottom offers
+  **Undo** for a few seconds.
+- **Export** saves the selected entries - or, with none selected, every
+  entry on the tab that matches the filters (collapsed groups included) -
+  as **CSV** (for a spreadsheet) or **Markdown** (a table to paste into a
+  GitHub issue or forum post).
+- **Keyboard**: <kbd>Tab</kbd> to a row, <kbd>↑</kbd>/<kbd>↓</kbd> to move,
+  <kbd>Space</kbd> to select, <kbd>Enter</kbd> to show its details (or
+  collapse a heading, or sort by a column heading); <kbd>/</kbd> jumps to
+  the filter and <kbd>Esc</kbd> clears the selection.
+- Each list's filter, drop-downs, tab and sort are remembered in your
+  browser, so the page opens as you left it.
 - New entries appear live, without refreshing. On a phone, each entry shows
   as a card and the column names become sort buttons.
 - The view buttons, tabs, filters, buttons and column headings stay in
@@ -321,8 +386,8 @@ the clipboard, so you can paste it into any AI chat. Several entries go
 into one prompt, numbered, in the order they're listed. It doesn't need
 an OpenAI API key and sends nothing anywhere itself.
 
-If an anomaly you've marked resolved is logged again *after* you resolved
-it, the next scan moves it back to **Open**, marked **Recurred**, so a fix
+If an anomaly you've archived is logged again *after* you archived it,
+the next scan moves it back to **Open**, marked **Recurred**, so a fix
 that didn't hold doesn't go unnoticed. Entries not seen within the report
 retention window (default 30 days) are pruned after each scan; at most
 5,000 are kept.
@@ -386,11 +451,13 @@ them at the top: **Failures** and **Runs**.
 
 #### Failures
 
-Failed automation and script runs, and automation runs missed while Home
-Assistant was offline. Columns: **Date**, **Time** (sorts by time of day,
-so everything that fails around 03:00 sorts together), **Automation /
-script** (links to its traces; scripts are marked **Script**) and
-**Reason**; filter to failed runs, missed runs or scripts only. A script
+Failed automation and script runs, automation runs missed while Home
+Assistant was offline, and automations that
+[stopped running](#stopped-automation-alerts). Columns: **Date**, **Time**
+(sorts by time of day, so everything that fails around 03:00 sorts
+together), **Automation / script** (links to its traces; scripts are marked
+**Script**) and **Reason**; filter to failed, missed or stopped runs, or
+scripts only. A script
 that fails when called from an automation appears twice - once for each,
 since both runs failed.
 
@@ -402,9 +469,10 @@ conditions aren't included), **Automation** (links to its traces) and
 **Trigger** - Home Assistant's description of what triggered it, such as
 "state of binary_sensor.motion" or "time pattern", or **Manual** when it
 was run by hand (the Run button or the `automation.trigger` action).
-Filter by automation or trigger, or to triggered or manual runs only, and
-by time: **Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24
-hours** (or all recorded runs).
+Filter by automation or trigger in the filter box, to one automation with
+the automation drop-down, to triggered or manual runs only, and by time:
+**Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24 hours** (or
+all recorded runs).
 
 Runs are grouped by day, newest first - **Today**, **Yesterday**, then the
 weekday and date - with each run's time. Click a day's heading to collapse
@@ -413,11 +481,16 @@ it, or **Collapse all**; its checkbox selects all of that day's runs.
 Runs are kept for the same time as reports and list entries (Settings,
 default 30 days), up to 10,000; older ones are removed with each scan.
 
-**Exclude automation** removes the selected runs' automations from the
-list - their runs are deleted and no more are recorded - and lists them
-on the **Excluded** tab with their last run and when they were excluded.
-**Include again** starts recording their runs again. Runs aren't marked
-resolved, so this section has no Archived tab.
+**Stop monitoring** removes the selected runs' automations from the
+list - their runs are deleted and no more are recorded (nor checked for
+[stopping](#stopped-automation-alerts)) - and lists them on the **Not
+monitored** tab with their last run and when that started. **Monitor
+again** starts recording their runs again. Runs aren't archived, so this
+section has no Archived tab.
+
+Only what's changed is sent to the page as automations run (new runs, and
+the oldest dropped to make room), not the whole list each time, so the page
+stays quick on a busy system.
 
 ### Devices & integrations
 
@@ -440,6 +513,18 @@ after Home Assistant starts, once things have had time to come up):
 - **Repair** - an issue from Home Assistant's own **Repairs** page that
   hasn't been ignored there, with its severity and, if it has one, the
   version it breaks in.
+- **Flapping** - a device (or an entity with no device) that keeps going
+  unavailable and coming back - typically a weak Zigbee or Wi-Fi link or a
+  failing power supply - however briefly, so it's usually back before the
+  5-minute check would see it offline: by default, unavailable **3 times
+  within 24 hours** ("Unavailable 5 times in the last 24 hours · last
+  10:12"), set in [Settings](#settings) (0 turns it off). Every entity
+  becoming unavailable is watched as it happens; several of a device's
+  entities going within 10 seconds count as one drop, and changes while
+  Home Assistant starts or stops, or while the integration is being
+  reloaded, don't count. ▸ lists the entities that went. It clears (and is
+  archived) once the device has dropped fewer times than that within the
+  window.
 
 Devices of an integration that failed to load are left to that
 integration's entry, so one broken integration isn't reported as dozens
@@ -484,7 +569,7 @@ Click an integration's heading to collapse it (▸) or expand it again (▾);
 **Collapse all** / **Expand all** does every integration at once. Which
 integrations are collapsed is remembered in your browser. Collapsing an
 integration deselects its entries, and **Select all** skips collapsed
-ones, so nothing hidden gets marked resolved by accident.
+ones, so nothing hidden gets archived by accident.
 
 Columns: **Type**, **Name** (with its area and integration; links to the
 device, integration or Repairs page), **Problem** and **Since**; filter by
@@ -498,12 +583,12 @@ These problems end by themselves, so this list keeps up with them:
 - When a problem clears up - the device comes back, the integration
   loads, the repair is fixed - it moves to
   **Archived** automatically, marked **Cleared**.
-- **Mark resolved** on a problem that's still there archives it as
+- **Archive** on a problem that's still there archives it as
   acknowledged; it stays archived for as long as it lasts.
 - If an archived problem comes back after it had cleared, it returns to
   **Open**, marked **Recurred**.
-- **Clear archive** deletes archived entries; one that's still a problem
-  reappears on the next check.
+- **Delete** / **Delete all archived** delete archived entries; one that's
+  still a problem reappears on the next check.
 - **Ignore** moves selected problems to the **Ignored** tab - for entities
   that are unavailable on purpose but still needed, so they don't clog up
   the list. They keep being checked: the tab shows when each was ignored
@@ -513,9 +598,10 @@ These problems end by themselves, so this list keeps up with them:
   unavailable, the entry returns to **Open**, marked **Recurred**, so a
   new problem isn't hidden. **Stop ignoring** moves entries back to Open
   (or to Archived, if they've cleared).
-- **Don't monitor** goes further, for a device you don't want reported at
+- **Stop monitoring** goes further, for a device you don't want reported at
   all (or an entity with no device): Log Doctor stops reporting it,
-  whatever becomes unavailable or isn't provided any more, and lists it on
+  whatever becomes unavailable or isn't provided any more and however often
+  it flaps, and lists it on
   the **Not monitored** tab with when that started (the problem shown is
   the last one reported). Integrations and Repairs issues aren't devices,
   so they can be ignored but not left unmonitored. **Monitor again**
@@ -563,8 +649,8 @@ Two kinds of entry:
   manager fails is added the same way as a problem ("Backup failed:
   upload failed"). Like anomalies, successes are grouped, so each kind is
   one entry: its **Last logged** is the latest successful backup, **Count**
-  how many there have been. Marking one resolved archives it until the
-  next success brings it back.
+  how many there have been. Archiving one archives it until the next
+  success brings it back.
 
 Columns: **Status** (Success or the problem's level), **Last logged**, **Last found**,
 **Source** (with the logger), **Message** and **Count**; filter to
@@ -587,44 +673,78 @@ by (`/log-doctor#reboots`):
 - **Finished starting** - when Home Assistant reported it had started.
 - **Startup messages until** - finished starting plus the startup grace
   period; messages up to then are startup messages.
-- **Took** - from the shutdown (or the start, if no shutdown was recorded)
-  until Home Assistant had finished starting.
+- **Startup took** - from the start until Home Assistant had finished
+  starting; marked **Slow** when it took much longer than usual (over half
+  as long again as the median of the restarts listed, and over 30
+  seconds) - after an update that slowed startup down, say.
+- **Down for** - from the shutdown (or the start, if no shutdown was
+  recorded) until Home Assistant had finished starting.
+- **Messages** - how many log lines at or above the minimum severity were
+  logged during the restart's shutdown and startup windows, with how many
+  were errors. Click the number to see them: Startup & shutdown opens
+  showing just that restart's messages (**Only the restart of …** - click
+  it to show them all again). Counted by the scans after each restart, from
+  0.40.0 on; earlier restarts show "—".
 
 Filter by date or time, or to clean or unclean shutdowns. **Archive**
 moves selected restarts to the Archived tab; only the newest 20 (set in
 [Settings](#settings)) stay open, and older ones are archived
 automatically (marked **Auto**) - one you restore may be archived again
 at the next restart if it's still beyond that number. On the Archived tab,
-**Delete selected** (after a confirmation) permanently deletes the
-selected entries, and **Clear archive** all of them. Deleted entries don't
+**Delete** (after a confirmation) permanently deletes the selected
+entries, and **Delete all archived** all of them. Deleted entries don't
 come back.
 
 This page is a record for you: archiving or deleting entries doesn't
 change how log messages are classified, which always uses the restarts
 Log Doctor keeps internally.
 
+### Insights
+
+How much is being logged, and what's logging it (`/log-doctor#insights`):
+
+- **Warnings and errors logged** - a chart of the warnings and errors
+  logged per hour over the last **24 hours** or **7 days**, or per day
+  over the last **30 days**, errors (critical included) at the bottom of
+  each column and warnings on top. Hover over a column (or focus the chart
+  and use <kbd>←</kbd>/<kbd>→</kbd>) for its numbers, or **Show as table**.
+  Each scan counts the lines logged since the previous one, by the time
+  they say they were logged - every source it reads, backups included, at
+  warning level or above whatever the minimum severity setting - from
+  0.40.0 on, kept for the report retention window.
+- **Weekly digest** - a preview of the [weekly digest](#weekly-digest) as
+  it would be sent now, with **Send digest now**, **Copy as Markdown** and
+  **Download .md**.
+
 ### Settings
 
 Every setting from the integration's **Configure** dialog, plus what its
-entities do, on one page (`/log-doctor#settings`):
+entities do, on one page (`/log-doctor#settings`), in sections - each with
+a line saying what it covers, and links to each at the top:
 
 - **Daily scan** - scan time, minimum severity, first-scan lookback, log
-  file path, Supervisor/Host/add-on logs, the startup grace period (how
-  long after starting messages still count as startup messages, for
-  [Startup & shutdown](#startup--shutdown)), how many restarts stay open
-  on [Restart history](#restart-history) (default 20), and how long
-  reports and list entries are kept.
-- **Automations & scripts** - failure alerts, missed-schedule alerts, and
-  which time patterns to skip.
+  file path, Supervisor/Host/add-on logs.
+- **Startup & shutdown** - the startup grace period (how long after
+  starting messages still count as startup messages, for
+  [Startup & shutdown](#startup--shutdown)) and how many restarts stay
+  open on [Restart history](#restart-history) (default 20).
+- **Keeping history** - how long reports, list entries, automation runs
+  and the Insights counts are kept.
+- **Automations & scripts** - failure alerts, missed-schedule alerts and
+  which time patterns to skip, and
+  [stopped automation alerts](#stopped-automation-alerts).
 - **Devices & integrations** - turn the checks on or off, how long a
-  device must be offline before it's reported.
-- **Notifications** - the phone to push automation failures and missed
-  schedules to (picked from your Companion app devices), and the notify
-  service for the daily scan summary (with suggestions).
-- **Investigation (OpenAI)** - the API key, the per-scan cap, and the
-  **Auto-investigate** switch. The key is never shown or sent to the
-  browser: the page only says whether one is set. Type a new one to replace
-  it, or tick **Remove key**.
+  device must be offline before it's reported, and when a device counts as
+  flapping.
+- **Notifications & weekly digest** - the phone to push automation
+  failures, missed and stopped runs to (picked from your Companion app
+  devices), the notify service for the daily scan summary and weekly digest
+  (with suggestions), and whether and on which day to send the
+  [weekly digest](#weekly-digest).
+- **Investigation (OpenAI)** - the API key, the model, the per-scan cap,
+  and the **Auto-investigate** switch. The key is never shown or sent to
+  the browser: the page only says whether one is set. Type a new one to
+  replace it, or tick **Remove key**.
 - **Last scan** - what the last scan checked (log file and lines read,
   time window, each other source and its lines) and found (matching lines,
   distinct anomalies, new vs. still occurring, knowledge-base matches, the
@@ -638,6 +758,35 @@ saved - and, like saving that dialog, restarts WP Log Doctor for a moment.
 The Auto-investigate switch, Scan now and Clear history take effect
 straight away. The entities and the Configure dialog still work and stay in
 step with this page.
+
+## Weekly digest
+
+A summary of the last seven days, sent after the daily scan on the day you
+choose (Monday by default; turn it off in [Settings](#settings)), and any
+time from [Insights](#insights) (**Send digest now**) or the
+`log_doctor.send_weekly_digest` action. It goes out as a persistent
+notification ("Log Doctor weekly digest · 29 Sep - 06 Oct 2026"), as a
+short push to the **Mobile notify service** if one is set, and as a
+Markdown file in `logdoctor/reviews/` (`weekly_digest.md`, plus a dated
+copy pruned with the scan reports). It covers:
+
+- **At a glance** - new anomalies and how many are open, errors and
+  warnings logged against the week before, automation runs and failures
+  (failed, missed, stopped), open device and integration problems and how
+  many cleared by themselves, restarts (and how many weren't clean), and
+  the last successful backup.
+- **Noisiest integrations** - the ten integrations (or add-ons, Host and
+  other log sources) that logged the most errors and warnings this week,
+  with the week before and the change, so you can see what to update, fix
+  or remove. Integrations link to their page on Insights.
+- **New in the log** - the week's new anomalies, worst first.
+- **Automations** - the ones failing most, ones that stopped running, and
+  the busiest.
+- **Devices & integrations** - open problems by type, and flapping devices.
+- **Restarts** - how long startup took on average and at the slowest, and
+  how much was logged while starting and stopping.
+
+It's built from what Log Doctor keeps anyway, so the log isn't read again.
 
 ## Automation failure log
 
@@ -699,9 +848,12 @@ A couple of things are different for these sources compared to
   last scan, so a line still in the tail isn't counted again on every scan
   (and restart messages among them land on
   [Startup & shutdown](#startup--shutdown)). A line that still comes with
-  no time of its own (an older Supervisor) is counted at the scan's time,
-  and never moves an entry between the Log review and Startup & shutdown,
-  since when it was really logged is unknown. Repeat
+  no time of its own (an older Supervisor, or an add-on's own lines) is
+  counted at the scan's time, and never moves an entry between the Log
+  review and Startup & shutdown, since when it was really logged is
+  unknown. Such lines are only counted once: lines already in the source's
+  previous fetch are skipped (matched by their text, as many times as they
+  appeared then, so a line logged again since is still counted). Repeat
   entries are still deduped by the same "already reported" tracking as
   everything else, so you won't get renotified for the same ongoing issue
   every day.
@@ -750,7 +902,9 @@ Log Doctor's files are laid out like this:
 └── reviews/
     ├── log_doctor_report_2026-09-15_080000.md
     ├── latest.md
-    └── latest.findings.md       (from the investigation stage)
+    ├── latest.findings.md       (from the investigation stage)
+    ├── weekly_digest_2026-09-15.md
+    └── weekly_digest.md         (the latest weekly digest)
 ```
 
 Before version 0.15.0 everything was kept flat in
@@ -766,8 +920,8 @@ When an OpenAI API key is configured **and** the `switch.log_doctor_auto_
 investigate` entity is on (on by default), Log Doctor automatically
 researches every anomaly in each scan's report - right after the scan
 finishes, against the report it just wrote - using the same approach as
-the [companion app](#companion-app): an OpenAI model (`gpt-6-astra`) with
-web search enabled, asked to explain what each error means, what's likely
+the [companion app](#companion-app): an OpenAI model (`gpt-6-astra` unless
+you choose another in [Settings](#settings)) with web search enabled, asked to explain what each error means, what's likely
 causing it, and how to troubleshoot or resolve it.
 
 Investigating isn't free - it's one OpenAI call per anomaly, every scan.
@@ -783,7 +937,8 @@ slow investigation (one OpenAI call per anomaly) never delays the scan's
 own notification or the `scan_now` service call returning. When it
 finishes, it posts its **own persistent notification** - distinct from the
 scan's - whether it found something, had nothing to investigate, or
-failed (e.g. a bad API key), so you always know the stage ran. Findings
+failed (e.g. a bad API key, or a model OpenAI no longer offers - choose
+another in Settings), so you always know the stage ran. Findings
 are written to disk next to the report, the same way the report itself is:
 `log_doctor_report_*.findings.md` per run, plus a `latest.findings.md` that
 always mirrors the most recent one, pruned on the same retention window as
@@ -895,6 +1050,34 @@ not with log size.
 - `log_doctor.scan_now` — run a scan immediately.
 - `log_doctor.clear_history` — forget which anomalies have already been
   reported, so the next scan reports everything as new.
+- `log_doctor.send_weekly_digest` — send the [weekly digest](#weekly-digest)
+  now.
+
+## Diagnostics
+
+**Settings → Devices & services → WP Log Doctor → ⋮ → Download
+diagnostics** saves what Log Doctor is set to and the state of what it
+keeps - list sizes by tab and type, the last scan's summary, the recent
+restarts, the Insights counts kept, flapping devices - for troubleshooting
+Log Doctor itself (for example to attach to a GitHub issue). The OpenAI API
+key is redacted, and no log messages, names or entity ids are included.
+
+## Tests (for maintainers)
+
+`tests/` holds a pytest suite for the parts that are easiest to get wrong -
+log parsing, restart classification, the lists' pruning and ignore/monitor
+rules, automation run updates, untimed Supervisor lines, the Insights
+counts, stopped automations, flapping devices, the weekly digest and
+diagnostics. It runs against Home Assistant itself (no
+pytest-homeassistant-custom-component needed):
+
+```bash
+pip install -r requirements_test.txt
+pytest
+```
+
+The [Tests workflow](.github/workflows/tests.yml) runs it on every push and
+pull request.
 
 ## Releasing updates (for maintainers)
 

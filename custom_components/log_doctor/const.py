@@ -51,6 +51,27 @@ DEFAULT_RESTART_GRACE_MINUTES = 3
 # archived automatically (see restart_history.py).
 CONF_RESTART_HISTORY_OPEN = "restart_history_open_entries"
 DEFAULT_RESTART_HISTORY_OPEN = 20
+# The OpenAI model the investigation stage uses (see investigation.py).
+CONF_INVESTIGATION_MODEL = "investigation_model"
+DEFAULT_INVESTIGATION_MODEL = "gpt-6-astra"
+# A device (or entity with no device) that becomes unavailable at least
+# this many times within flap_hours is reported as flapping on Devices &
+# integrations (see flapping.py); 0 turns the check off.
+CONF_FLAP_COUNT = "flap_count"
+DEFAULT_FLAP_COUNT = 3
+CONF_FLAP_HOURS = "flap_hours"
+DEFAULT_FLAP_HOURS = 24
+# Automations that usually run regularly but have gone quiet for much
+# longer than usual are reported as failures (see stopped_automations.py).
+CONF_MONITOR_STOPPED_AUTOMATIONS = "monitor_stopped_automations"
+DEFAULT_MONITOR_STOPPED_AUTOMATIONS = True
+# The weekly digest (see weekly_digest.py), sent after the daily scan on
+# this day of the week.
+CONF_WEEKLY_DIGEST = "weekly_digest"
+DEFAULT_WEEKLY_DIGEST = True
+CONF_WEEKLY_DIGEST_DAY = "weekly_digest_day"
+DEFAULT_WEEKLY_DIGEST_DAY = "mon"
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 # Supervisor's /logs endpoints default to only the last 100 lines unless a
 # "lines" query parameter is passed. Max it out for now (Supervisor doesn't
@@ -71,6 +92,8 @@ NOTIFICATION_ID_INVESTIGATION = "log_doctor_investigation_report"
 # One notification per failing automation, suffixed with its object_id.
 NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX = "log_doctor_automation_failure_"
 NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
+NOTIFICATION_ID_STOPPED_AUTOMATIONS = "log_doctor_stopped_automations"
+NOTIFICATION_ID_WEEKLY_DIGEST = "log_doctor_weekly_digest"
 
 # hass.data key for the failure store (failure_store.py), kept apart from
 # hass.data[DOMAIN], which only holds coordinators keyed by entry ID.
@@ -80,11 +103,12 @@ DATA_HEALTH_STORE = f"{DOMAIN}_health_store"
 DATA_BACKUP_STORE = f"{DOMAIN}_backup_store"
 DATA_RESTART_HISTORY = f"{DOMAIN}_restart_history"
 DATA_RUN_STORE = f"{DOMAIN}_automation_runs"
+DATA_STATS = f"{DOMAIN}_stats"
+DATA_FLAPS = f"{DOMAIN}_flaps"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
-# The Log Doctor sidebar panel (see panel.py / frontend/), with a "Log
-# review", "Automation failures", "Devices & integrations" and "Backups"
-# view, picked by the URL's #logs / #failures / #health / #backups.
+# The Log Doctor sidebar panel (see panel.py / frontend/); its view is
+# picked by the URL's #hash (#logs, #failures, #health, #insights, ...).
 PANEL_URL_PATH = "log-doctor"
 PANEL_TITLE = "Log Doctor"
 PANEL_ICON = "mdi:stethoscope"
@@ -96,6 +120,9 @@ PANEL_FAILURES_URL = f"/{PANEL_URL_PATH}#failures"
 PANEL_RUNS_URL = f"/{PANEL_URL_PATH}#runs"
 PANEL_BACKUPS_URL = f"/{PANEL_URL_PATH}#backups"
 PANEL_RESTARTS_URL = f"/{PANEL_URL_PATH}#restarts"
+PANEL_REBOOTS_URL = f"/{PANEL_URL_PATH}#reboots"
+PANEL_HEALTH_URL = f"/{PANEL_URL_PATH}#health"
+PANEL_INSIGHTS_URL = f"/{PANEL_URL_PATH}#insights"
 # 0.17.0's standalone "Automation failures" panel. Still registered (hidden
 # from the sidebar) so old notification links keep working; it opens the
 # same panel on the failures view.
@@ -103,6 +130,7 @@ LEGACY_FAILURES_PANEL_URL_PATH = "log-doctor-failures"
 
 SERVICE_SCAN_NOW = "scan_now"
 SERVICE_CLEAR_HISTORY = "clear_history"
+SERVICE_SEND_WEEKLY_DIGEST = "send_weekly_digest"
 
 ATTR_ANOMALIES = "anomalies"
 ATTR_NEW_COUNT = "new_count"

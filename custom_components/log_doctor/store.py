@@ -31,6 +31,14 @@ class LogDoctorData:
     # The last scan's summary (digest.build_scan_summary), for the panel's
     # Settings page.
     last_summary: dict | None = None
+    # Supervisor log lines that don't say when they were logged, from the
+    # last fetch of each source: {source name: {line hash: times}}. The
+    # Supervisor returns the newest lines each time, so a line in the last
+    # fetch is skipped rather than counted again (see coordinator.py).
+    untimed_seen: dict[str, dict[str, int]] = field(default_factory=dict)
+    # When the weekly digest was last sent (UTC ISO), so a day's scans send
+    # it once.
+    last_digest: str | None = None
 
 
 class LogDoctorStore:
@@ -58,6 +66,8 @@ class LogDoctorStore:
         }
         self.data.auto_investigate = raw.get("auto_investigate", True)
         self.data.last_summary = raw.get("last_summary")
+        self.data.untimed_seen = raw.get("untimed_seen") or {}
+        self.data.last_digest = raw.get("last_digest")
 
     async def async_save(self) -> None:
         await self._store.async_save(
@@ -73,6 +83,8 @@ class LogDoctorStore:
                 },
                 "auto_investigate": self.data.auto_investigate,
                 "last_summary": self.data.last_summary,
+                "untimed_seen": self.data.untimed_seen,
+                "last_digest": self.data.last_digest,
             }
         )
 
@@ -83,6 +95,7 @@ class LogDoctorStore:
         self.data = LogDoctorData(
             auto_investigate=self.data.auto_investigate,
             last_summary=self.data.last_summary,
+            last_digest=self.data.last_digest,
         )
         await self.async_save()
 

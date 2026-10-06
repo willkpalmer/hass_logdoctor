@@ -10,7 +10,9 @@ automation runs missed while Home Assistant was offline (see
 missed_schedules.py). Log messages from Home Assistant starting or shutting
 down are kept apart on a Startup & shutdown view (see restarts.py). Backup problems and successes - Home Assistant's own
 and the GDrive Backup Utility add-on's - are kept apart from the rest on a
-Backups view (see backups.py, backup_store.py, backup_monitor.py). When an
+Backups view (see backups.py, backup_store.py, backup_monitor.py). Each
+scan also counts warnings and errors over time (see stats.py) for the
+Insights page and the weekly digest (see weekly_digest.py). When an
 OpenAI API key is configured and the "Auto-investigate" switch is on (see
 switch.py), it also automatically investigates the anomalies found with an
 OpenAI model right after each scan (see investigation.py). The separate
@@ -28,6 +30,21 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
+    CONF_FLAP_COUNT,
+    CONF_FLAP_HOURS,
+    CONF_INVESTIGATION_MODEL,
+    CONF_MONITOR_STOPPED_AUTOMATIONS,
+    CONF_WEEKLY_DIGEST,
+    CONF_WEEKLY_DIGEST_DAY,
+    DATA_FLAPS,
+    DATA_STATS,
+    DEFAULT_FLAP_COUNT,
+    DEFAULT_FLAP_HOURS,
+    DEFAULT_INVESTIGATION_MODEL,
+    DEFAULT_MONITOR_STOPPED_AUTOMATIONS,
+    DEFAULT_WEEKLY_DIGEST,
+    DEFAULT_WEEKLY_DIGEST_DAY,
+    SERVICE_SEND_WEEKLY_DIGEST,
     CONF_MONITOR_HEALTH,
     CONF_OFFLINE_HOURS,
     DEFAULT_MONITOR_HEALTH,
@@ -84,10 +101,13 @@ from .backups import backup_source
 from .health_monitor import HealthMonitor
 from .health_store import HealthStore
 from .failure_store import FailureStore
+from .flapping import FlapTracker
 from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
 from .restart_history import RestartHistoryStore
 from .restarts import RestartTracker
+from .stats import StatsStore
+from .stopped_automations import StoppedAutomationWatch
 from .store import LogDoctorStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -166,6 +186,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.data[DATA_RUN_STORE] = run_store
     entry.async_on_unload(async_record_runs(hass, run_store))
+    # Warnings and errors over time, for Insights and the weekly digest.
+    stats = StatsStore(hass)
+    await stats.async_load()
+    hass.data[DATA_STATS] = stats
     # The panel's Restart history view.
     restart_history = RestartHistoryStore(hass)
     await restart_history.async_load()
@@ -209,6 +233,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         backup_store=backup_store,
         restarts=restarts,
         run_store=run_store,
+        stats=stats,
+        investigation_model=options.get(CONF_INVESTIGATION_MODEL) or DEFAULT_INVESTIGATION_MODEL,
     )
 
     hass.data.setdefault(DOMAIN, {})
@@ -220,8 +246,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         hour, minute, second = DEFAULT_SCAN_HOUR, DEFAULT_SCAN_MINUTE, 0
 
+    weekly_digest = options.get(CONF_WEEKLY_DIGEST, DEFAULT_WEEKLY_DIGEST)
+    weekly_digest_day = options.get(CONF_WEEKLY_DIGEST_DAY, DEFAULT_WEEKLY_DIGEST_DAY)
+
     async def _scheduled_scan(_now) -> None:
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
+        # The weekly digest goes out after the scan on its day, so it
+        # includes that scan.
+        if weekly_digest and coordinator.weekly_digest_due(weekly_digest_day):
+            try:
+                await coordinator.async_send_weekly_digest()
+            except Exception:  # noqa: BLE001 - never let the digest break anything
+                _LOGGER.exception("Could not send the weekly digest")
 
     unsub_time = async_track_time_change(
         hass, _scheduled_scan, hour=hour, minute=minute, second=second
@@ -253,13 +289,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await watch.async_start()
         entry.async_on_unload(watch.async_stop)
 
+    if options.get(CONF_MONITOR_STOPPED_AUTOMATIONS, DEFAULT_MONITOR_STOPPED_AUTOMATIONS):
+        stopped = StoppedAutomationWatch(
+            hass, run_store, failure_store, notify_device_id=notify_device_id
+        )
+        entry.async_on_unload(stopped.async_start())
+
     if options.get(CONF_MONITOR_HEALTH, DEFAULT_MONITOR_HEALTH):
+        flaps = None
+        flap_count = int(options.get(CONF_FLAP_COUNT, DEFAULT_FLAP_COUNT))
+        if flap_count > 0:
+            # Devices that keep dropping off and coming back.
+            flaps = FlapTracker(
+                hass,
+                count=flap_count,
+                window=timedelta(hours=int(options.get(CONF_FLAP_HOURS, DEFAULT_FLAP_HOURS))),
+            )
+            await flaps.async_load()
+            entry.async_on_unload(flaps.async_start())
+            hass.data[DATA_FLAPS] = flaps
         health_monitor = HealthMonitor(
             hass,
             health_store,
             offline_after=timedelta(
                 hours=int(options.get(CONF_OFFLINE_HOURS, DEFAULT_OFFLINE_HOURS))
             ),
+            flaps=flaps,
         )
         entry.async_on_unload(health_monitor.async_start())
         # "Monitor again" on the panel checks straight away.
@@ -274,10 +329,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _async_clear_history(_call: ServiceCall) -> None:
         await store.async_clear_history()
 
+    async def _async_send_weekly_digest(_call: ServiceCall) -> None:
+        await coordinator.async_send_weekly_digest()
+
     if not hass.services.has_service(DOMAIN, SERVICE_SCAN_NOW):
         hass.services.async_register(DOMAIN, SERVICE_SCAN_NOW, _async_scan_now)
     if not hass.services.has_service(DOMAIN, SERVICE_CLEAR_HISTORY):
         hass.services.async_register(DOMAIN, SERVICE_CLEAR_HISTORY, _async_clear_history)
+    if not hass.services.has_service(DOMAIN, SERVICE_SEND_WEEKLY_DIGEST):
+        hass.services.async_register(DOMAIN, SERVICE_SEND_WEEKLY_DIGEST, _async_send_weekly_digest)
 
     await async_register_panel(hass)
 
@@ -304,10 +364,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             DATA_BACKUP_STORE,
             DATA_RESTART_HISTORY,
             DATA_RUN_STORE,
+            DATA_STATS,
+            DATA_FLAPS,
         ):
-            if (review_list := hass.data.pop(key, None)) is not None:
-                await review_list.async_shutdown()
+            if (stored := hass.data.pop(key, None)) is not None:
+                await stored.async_shutdown()
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, SERVICE_SCAN_NOW)
             hass.services.async_remove(DOMAIN, SERVICE_CLEAR_HISTORY)
+            hass.services.async_remove(DOMAIN, SERVICE_SEND_WEEKLY_DIGEST)
     return unload_ok

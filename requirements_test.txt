@@ -1,0 +1,4 @@
+# Home Assistant itself, for the tests in tests/ (see tests/conftest.py).
+homeassistant==2026.2.3
+pytest
+pytest-asyncio

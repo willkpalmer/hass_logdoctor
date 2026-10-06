@@ -27,9 +27,10 @@ entries, the prompt the investigation stage would send (see
 investigation.py), for the panel to copy to the clipboard.
 
 All commands are admin-only, like the panel itself. The panel subscribes
-once per list and gets the full list back straight away and again after
-every change, so new entries appear live and open browser tabs stay in
-sync.
+once per list and gets the full list back straight away ({"records"}) and
+again after every change, so new entries appear live and open browser tabs
+stay in sync - or, for lists that only grow (the automation runs), just
+the change: {"added": [records], "removed": [ids]}.
 """
 from __future__ import annotations
 
@@ -112,10 +113,14 @@ def websocket_subscribe(
         return
 
     @callback
-    def _forward() -> None:
+    def _forward(delta: dict[str, Any] | None = None) -> None:
         if review_list.closed:
             # The integration is reloading; the panel re-subscribes.
             connection.send_message(websocket_api.event_message(msg["id"], {"reload": True}))
+            return
+        if delta is not None:
+            # Just what changed (new automation runs): {"added", "removed"}.
+            connection.send_message(websocket_api.event_message(msg["id"], delta))
             return
         connection.send_message(
             websocket_api.event_message(msg["id"], {"records": review_list.records})

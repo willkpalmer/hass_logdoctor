@@ -47,9 +47,11 @@ _TITLE = """# Automation failures
 Recorded by WP Log Doctor, one row per failure. **Time** is when the run was
 triggered - for an automation on a time schedule, its scheduled time.
 **Failed** rows are runs that raised an error; **Missed** rows are runs that
-never happened because Home Assistant was offline. Resolve failures, and
-clear resolved ones, from the **Automation failures** page in Home
-Assistant's sidebar; this file is rewritten to match after every change.
+never happened because Home Assistant was offline; **Stopped** rows are
+automations that usually run regularly but haven't for much longer than
+usual. Archive failures, and delete archived ones, from the Log Doctor
+page in Home Assistant's sidebar (Automations → Failures); this file is
+rewritten to match after every change.
 """
 _OPEN_TABLE_HEADER = "| Date | Time | Automation | Reason |\n| --- | --- | --- | --- |\n"
 _ARCHIVED_TABLE_HEADER = (
@@ -104,7 +106,7 @@ def _uncell(text: str) -> str:
 
 def _reason_cell(reason: str) -> str:
     kind, sep, detail = reason.partition(": ")
-    if sep and kind in ("Failed", "Missed"):
+    if sep and kind in ("Failed", "Missed", "Stopped"):
         # Bold the kind so failed and missed runs stand apart at a glance.
         return f"**{kind}:** {_cell(detail)}"
     return _cell(reason)
@@ -175,7 +177,7 @@ def parse_markdown_rows(text: str) -> list[FailureEntry]:
         entity_id = ""
         if auto_match := _AUTOMATION_CELL_RE.match(automation):
             automation, entity_id = auto_match.groups()
-        reason = re.sub(r"^\*\*(Failed|Missed):\*\* ", r"\1: ", reason)
+        reason = re.sub(r"^\*\*(Failed|Missed|Stopped):\*\* ", r"\1: ", reason)
         try:
             when = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         except ValueError:

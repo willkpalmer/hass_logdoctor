@@ -11,16 +11,21 @@ Startup & shutdown view.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
+    DEFAULT_INVESTIGATION_MODEL,
     DEFAULT_MAX_INVESTIGATED,
     DEFAULT_REPORT_RETENTION_DAYS,
     DOMAIN,
@@ -29,6 +34,7 @@ from .const import (
     PANEL_BACKUPS_URL,
     PANEL_LOGS_URL,
     PANEL_RESTARTS_URL,
+    WEEKDAYS,
 )
 from .digest import (
     AnomalyReport,
@@ -44,6 +50,7 @@ from .investigation import async_investigate_report
 from .knowledge_base import match_known_issue
 from .log_parser import (
     AnomalyGroup,
+    LogEntry,
     filter_and_group,
     parse_log_lines,
     parse_supervisor_log_text,
@@ -56,7 +63,9 @@ from .failure_store import FailureStore
 from .health_store import HealthStore
 from .report_files import async_write_report
 from .restarts import RestartTracker
+from .stats import StatsStore
 from .store import LogDoctorStore
+from .weekly_digest import WeeklyDigest, async_send_digest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +96,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         backup_store: BackupStore | None = None,
         restarts: RestartTracker | None = None,
         run_store: AutomationRunStore | None = None,
+        stats: StatsStore | None = None,
+        investigation_model: str = DEFAULT_INVESTIGATION_MODEL,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -105,6 +116,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.backup_store = backup_store
         self.restarts = restarts
         self.run_store = run_store
+        self.stats = stats
+        self.investigation_model = investigation_model
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -133,6 +146,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             ] + entries
 
         sources_checked: list[LogSourceSummary] = []
+        supervisor_sources: set[str] = set()
         if self.include_supervisor_logs and supervisor_available():
             sources = await async_list_all_sources(self.hass)
             # The GDrive Backup Utility add-on's log: only lines in Home
@@ -143,6 +157,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 if path.startswith("addons/") and is_gdrive_addon(path.split("/")[1], name)
             }
             fetched = await async_fetch_all_logs(self.hass, sources)
+            supervisor_sources = {name for name, _text in fetched.values()}
             for log_path, (name, text) in fetched.items():
                 if text is None:
                     sources_checked.append(
@@ -150,23 +165,30 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     )
                     continue
                 source_lines = text.splitlines()
-                entries.extend(
-                    parse_supervisor_log_text(
-                        text,
-                        name,
-                        fallback_timestamp=now,
-                        structured_only=log_path in gdrive_paths,
-                    )
+                parsed = parse_supervisor_log_text(
+                    text,
+                    name,
+                    fallback_timestamp=now,
+                    structured_only=log_path in gdrive_paths,
                 )
+                entries.extend(self._skip_untimed_repeats(name, parsed))
                 sources_checked.append(
                     LogSourceSummary(name=name, lines_read=len(source_lines), ok=True)
                 )
+            # Sources that are gone (e.g. an add-on removed) are forgotten.
+            for gone in set(self.store.data.untimed_seen) - supervisor_sources:
+                del self.store.data.untimed_seen[gone]
+
+        if self.stats is not None:
+            # Warnings and errors over time, for Insights and the weekly digest.
+            self.stats.record(entries, since, supervisor_sources)
+            self.stats.prune(self.report_retention_days)
 
         # Backup messages go to the Backups view instead of the Log review.
         entries, backup_entries = split_backup_entries(entries)
 
         reports = self._reports(filter_and_group(entries, self.min_severity, since), now)
-        self._classify_restarts(reports)
+        impact = self._classify_restarts(reports)
         restart_reports = [report for report in reports if report.restart]
         reports = [report for report in reports if not report.restart]
         backup_reports: list[tuple[str, AnomalyReport]] = []
@@ -217,6 +239,12 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 await self.backup_store.async_prune(self.report_retention_days)
             except Exception:  # noqa: BLE001 - never let the review list break the scan
                 _LOGGER.exception("Could not update the Backups list")
+        if impact and self.restarts is not None and self.restarts.history is not None:
+            # Each restart's messages, on the Restart history.
+            try:
+                await self.restarts.history.async_add_impact(impact)
+            except Exception:  # noqa: BLE001 - never let the history break the scan
+                _LOGGER.exception("Could not update the Restart history")
         if self.health_store is not None:
             await self.health_store.async_prune(self.report_retention_days)
         if self.failure_store is not None:
@@ -244,6 +272,35 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
 
         return result
 
+    def _skip_untimed_repeats(self, source: str, entries: list[LogEntry]) -> list[LogEntry]:
+        """Drop untimed lines that were in this source's last fetch.
+
+        Lines that don't say when they were logged are given the scan's
+        time, so the "since the last scan" cut can't tell old from new; the
+        Supervisor returns the same newest lines each time, so without this
+        every scan would count them again. Lines are matched by content,
+        as many times as they appeared last time: a line logged once more
+        since is still counted.
+        """
+        previous = Counter(self.store.data.untimed_seen.get(source, {}))
+        current: Counter[str] = Counter()
+        kept: list[LogEntry] = []
+        for entry in entries:
+            if entry.timed:
+                kept.append(entry)
+                continue
+            key = hashlib.sha1((entry.raw or entry.message).encode()).hexdigest()[:16]
+            current[key] += 1
+            if previous[key] > 0:
+                previous[key] -= 1
+                continue
+            kept.append(entry)
+        if current:
+            self.store.data.untimed_seen[source] = dict(current)
+        else:
+            self.store.data.untimed_seen.pop(source, None)
+        return kept
+
     def _reports(self, groups: dict[str, AnomalyGroup], now: datetime) -> list[AnomalyReport]:
         """One report per group, worst-first, then most frequent."""
         reports: list[AnomalyReport] = []
@@ -260,10 +317,15 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         )
         return reports
 
-    def _classify_restarts(self, reports: list[AnomalyReport]) -> None:
-        """Mark the anomalies that belong on the Startup & shutdown view."""
+    def _classify_restarts(self, reports: list[AnomalyReport]) -> dict[str, dict[str, Any]]:
+        """Mark the anomalies that belong on the Startup & shutdown view.
+
+        Returns each restart's messages from this scan, for the Restart
+        history: {run id: {"lines", "errors", "signatures"}}.
+        """
+        impact: dict[str, dict[str, Any]] = {}
         if self.restarts is None or self.anomaly_store is None:
-            return
+            return impact
         for report in reports:
             phases: set[str] = set()
             runs: set[str] = set()
@@ -281,6 +343,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 else:
                     phases.add(found[0])
                     runs.add(found[1])
+                    tally = impact.setdefault(
+                        found[1], {"lines": 0, "errors": 0, "signatures": set()}
+                    )
+                    tally["lines"] += 1
+                    if entry.level in ("ERROR", "CRITICAL"):
+                        tally["errors"] += 1
+                    tally["signatures"].add(report.signature)
             report.phases = sorted(phases)
             report.restart_runs = sorted(runs)
             if timed:
@@ -290,6 +359,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             else:
                 # Nothing to go on: it stays where it is (new ones: Log review).
                 report.restart = self.anomaly_store.is_restart_category(report.signature)
+        return impact
 
     @staticmethod
     def _read_previous_log_lines(path: str, since: datetime) -> list[str]:
@@ -351,6 +421,25 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     self.mobile_notify_service,
                 )
 
+    async def async_send_weekly_digest(self) -> WeeklyDigest:
+        """Send the weekly digest now (see weekly_digest.py)."""
+        digest = await async_send_digest(
+            self.hass,
+            mobile_notify_service=self.mobile_notify_service,
+            retention_days=self.report_retention_days,
+        )
+        self.store.data.last_digest = dt_util.utcnow().isoformat()
+        await self.store.async_save()
+        return digest
+
+    def weekly_digest_due(self, weekday: str) -> bool:
+        """Whether today is the digest day and it hasn't gone out today."""
+        today = dt_util.now()
+        if WEEKDAYS[today.weekday()] != weekday:
+            return False
+        last = dt_util.parse_datetime(self.store.data.last_digest or "")
+        return last is None or dt_util.as_local(last).date() != today.date()
+
     async def _async_investigate(self, result: ScanResult) -> None:
         """Run the investigation stage against the report this scan just wrote.
 
@@ -368,6 +457,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 self.openai_api_key,
                 self.max_investigated,
                 self.report_retention_days,
+                self.investigation_model,
             )
         except Exception:  # noqa: BLE001 - never let a bad investigation go unreported
             _LOGGER.exception("Log Doctor investigation stage failed unexpectedly")

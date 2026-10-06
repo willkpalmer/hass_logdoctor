@@ -8,8 +8,9 @@ filled by health_monitor.py. One record per problem:
      "ignored_entities", "unmonitored"}
 
 kind is "offline" (a device or entity unavailable), "unavailable" (some
-of a device's entities unavailable), "integration"
-(failed to load) or "repair" (a Home Assistant Repairs issue). Low
+of a device's entities unavailable), "flapping" (a device that keeps going
+unavailable and coming back), "integration" (failed to load) or "repair"
+(a Home Assistant Repairs issue). Low
 battery checks were dropped in 0.23.0 (battery data is too unreliable
 across integrations); their records are removed on load.
 
@@ -34,13 +35,14 @@ record tracks whether the problem is still there ("active"):
 - Marking a device (or an entity with no device) not monitored
   (unmonitored = when) stops reporting it altogether: checks leave its
   record alone, whatever becomes unavailable or isn't provided any more,
-  and it's listed on the Not monitored tab. Monitoring it again removes
+  and it's listed on the Not monitored tab. That covers all of the
+  device's problems (offline, unavailable and flapping share its id after
+  the "<kind>:" prefix). Monitoring it again removes
   the record and checks straight away (recheck), so a device that's still
   unavailable is back on the open list as a new problem.
 """
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -48,11 +50,20 @@ from homeassistant.util import dt as dt_util
 from .review_list import ReviewList
 
 # Fields refreshed from every check.
-_DISPLAY_FIELDS = ("name", "sub", "detail", "link", "entities", "kind", "integration", "integration_name", "integration_core")
+_DISPLAY_FIELDS = (
+    "name", "sub", "detail", "link", "entities", "kind", "integration",
+    "integration_name", "integration_core", "flaps",
+)
 
 
 # Kinds that are a device or an entity, which can be marked not monitored.
-_DEVICE_KINDS = ("offline", "unavailable")
+_DEVICE_KINDS = ("offline", "unavailable", "flapping")
+
+
+def _device_of(issue_id: str) -> str | None:
+    """The device (or entity) a device problem's id is about."""
+    kind, _, group = issue_id.partition(":")
+    return group if kind in ("offline", "flapping") and group else None
 
 
 class HealthStore(ReviewList):
@@ -79,11 +90,18 @@ class HealthStore(ReviewList):
         now = dt_util.utcnow().isoformat()
         changed = False
         by_id = {record["id"]: record for record in self._records}
+        # Devices not monitored: none of their problems are reported.
+        unmonitored = {
+            _device_of(record["id"]) for record in self._records if record.get("unmonitored")
+        }
+        unmonitored.discard(None)
 
         for issue_id, issue in current.items():
             record = by_id.get(issue_id)
             if record is not None and record.get("unmonitored"):
                 continue  # not reported any more
+            if _device_of(issue_id) in unmonitored:
+                continue
             if record is not None and record.get("ignored"):
                 if self._update_ignored(record, issue, now):
                     changed = True
@@ -238,20 +256,13 @@ class HealthStore(ReviewList):
                 record["recurred"] = False
         return count
 
-    async def async_prune(self, retention_days: int) -> None:
-        """Drop archived problems that ended before the retention window."""
-        if retention_days <= 0:
-            return
-        cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
-        before = len(self._records)
-        self._records = [
-            r
-            for r in self._records
-            if r.get("active")
-            or r.get("ignored")
-            or r.get("unmonitored")
-            or not r.get("resolved")
-            or r["resolved"] >= cutoff
-        ]
-        if len(self._records) != before:
-            self.async_changed()
+    def _prune_time(self, record: dict[str, Any]) -> str | None:
+        """Archived problems age from when they ended; the rest stay."""
+        if (
+            record.get("active")
+            or record.get("ignored")
+            or record.get("unmonitored")
+            or not record.get("resolved")
+        ):
+            return None
+        return record["resolved"]

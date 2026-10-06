@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -73,15 +72,8 @@ class FailureStore(ReviewList):
         self.async_trim()
         self.async_changed()
 
-    async def async_prune(self, retention_days: int) -> None:
-        """Drop failures older than the retention window (0 = keep all)."""
-        if retention_days <= 0:
-            return
-        cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
-        before = len(self._records)
-        self._records = [r for r in self._records if r["when"] >= cutoff]
-        if len(self._records) != before:
-            self.async_changed()
+    def _prune_time(self, record: dict[str, Any]) -> str | None:
+        return record["when"]
 
     async def async_shutdown(self) -> None:
         """On unload: write a pending Markdown update, save, tell subscribers."""

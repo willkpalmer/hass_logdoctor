@@ -11,6 +11,15 @@ one page:
 - log_doctor/settings/set_auto_investigate - the Auto-investigate switch
 - log_doctor/settings/scan_now - the Scan now button
 - log_doctor/settings/clear_history - the log_doctor.clear_history service
+- log_doctor/settings/status - just the last scan's status, for the
+  panel's header
+
+and for the panel's Insights page:
+
+- log_doctor/insights/get - warnings and errors over time (stats.py), for
+  the last 24 hours, 7 days or 30 days, and a preview of the weekly digest
+  (weekly_digest.py), noisiest integrations included
+- log_doctor/insights/send_digest - send the weekly digest now
 
 The OpenAI API key is never sent to the browser: the page only learns
 whether one is set, and sends a new key (or a request to remove it) only
@@ -30,18 +39,31 @@ from homeassistant.helpers import entity_registry as er
 
 from .config_flow import _build_schema
 from .const import (
+    CONF_WEEKLY_DIGEST,
+    CONF_WEEKLY_DIGEST_DAY,
+    DATA_STATS,
+    DEFAULT_WEEKLY_DIGEST,
+    DEFAULT_WEEKLY_DIGEST_DAY,
+    WEEKDAYS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
     CONF_OPENAI_API_KEY,
     DOMAIN,
     SEVERITY_LEVELS,
 )
 from .paths import failure_log_path, reviews_dir
+from .weekly_digest import async_build_digest
 
 WS_GET = "log_doctor/settings/get"
 WS_UPDATE = "log_doctor/settings/update"
 WS_SET_AUTO_INVESTIGATE = "log_doctor/settings/set_auto_investigate"
 WS_SCAN_NOW = "log_doctor/settings/scan_now"
 WS_CLEAR_HISTORY = "log_doctor/settings/clear_history"
+WS_STATUS = "log_doctor/settings/status"
+WS_INSIGHTS = "log_doctor/insights/get"
+WS_SEND_DIGEST = "log_doctor/insights/send_digest"
+
+# Insights ranges: (points, one per hour or day).
+_RANGES = {"24h": (24, "hour"), "7d": (7 * 24, "hour"), "30d": (30, "day")}
 
 
 @callback
@@ -51,6 +73,9 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_set_auto_investigate)
     websocket_api.async_register_command(hass, websocket_scan_now)
     websocket_api.async_register_command(hass, websocket_clear_history)
+    websocket_api.async_register_command(hass, websocket_status)
+    websocket_api.async_register_command(hass, websocket_insights)
+    websocket_api.async_register_command(hass, websocket_send_digest)
 
 
 def _entry(
@@ -99,6 +124,9 @@ def _status(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
         status["report_file"] = summary.get("report_file")
     status["auto_investigate"] = coordinator.store.data.auto_investigate
     status["openai_configured"] = bool(coordinator.openai_api_key)
+    status["last_scan_ok"] = coordinator.last_update_success
+    if coordinator.last_exception is not None and not coordinator.last_update_success:
+        status["last_error"] = str(coordinator.last_exception)
     return status
 
 
@@ -123,6 +151,7 @@ def websocket_get(
             "options": options,
             "openai_api_key_set": api_key_set,
             "severity_levels": SEVERITY_LEVELS,
+            "weekdays": WEEKDAYS,
             "default_log_path": hass.config.path("home-assistant.log"),
             "mobile_devices": _mobile_devices(hass),
             "notify_services": sorted(hass.services.async_services().get("notify", {})),
@@ -236,3 +265,66 @@ async def websocket_clear_history(
         return
     await coordinator.store.async_clear_history()
     connection.send_result(msg["id"])
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_STATUS})
+@callback
+def websocket_status(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if (entry := _entry(hass, connection, msg["id"])) is None:
+        return
+    connection.send_result(msg["id"], {"status": _status(hass, entry)})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_INSIGHTS, vol.Optional("range", default="7d"): vol.In(list(_RANGES))}
+)
+@websocket_api.async_response
+async def websocket_insights(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if (entry := _entry(hass, connection, msg["id"])) is None:
+        return
+    stats = hass.data.get(DATA_STATS)
+    points, bucket = _RANGES[msg["range"]]
+    series: list[dict[str, Any]] = []
+    if stats is not None:
+        series = stats.hourly(points) if bucket == "hour" else stats.daily(points)
+    digest = await async_build_digest(hass)
+    options = _current_options(entry)
+    coordinator = _coordinator(hass, entry)
+    connection.send_result(
+        msg["id"],
+        {
+            "range": msg["range"],
+            "bucket": bucket,
+            "series": series,
+            "digest": {"title": digest.title, "markdown": digest.markdown, "data": digest.data},
+            "weekly": {
+                "enabled": options.get(CONF_WEEKLY_DIGEST, DEFAULT_WEEKLY_DIGEST),
+                "day": options.get(CONF_WEEKLY_DIGEST_DAY, DEFAULT_WEEKLY_DIGEST_DAY),
+                "days": WEEKDAYS,
+                "last_sent": coordinator.store.data.last_digest if coordinator else None,
+            },
+        },
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): WS_SEND_DIGEST})
+@websocket_api.async_response
+async def websocket_send_digest(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if (entry := _entry(hass, connection, msg["id"])) is None:
+        return
+    if (coordinator := _coordinator(hass, entry)) is None:
+        connection.send_error(msg["id"], "not_loaded", "WP Log Doctor isn't loaded")
+        return
+    digest = await coordinator.async_send_weekly_digest()
+    connection.send_result(
+        msg["id"], {"title": digest.title, "last_sent": coordinator.store.data.last_digest}
+    )

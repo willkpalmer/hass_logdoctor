@@ -50,7 +50,7 @@ backup_store.py).
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.util import dt as dt_util
@@ -295,17 +295,9 @@ class AnomalyStore(ReviewList):
             self.async_changed()
         return count
 
-    async def async_prune(self, retention_days: int) -> None:
-        """Drop anomalies not seen within the retention window (0 = keep all)."""
-        if retention_days <= 0:
-            return
-        cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
-        before = len(self._records)
-        self._records = [
-            r for r in self._records if r.get("ignored") or (r.get("last_seen") or "") >= cutoff
-        ]
-        if len(self._records) != before:
-            self.async_changed()
+    def _prune_time(self, record: dict[str, Any]) -> str | None:
+        """Not seen within the retention window: dropped (ignored ones stay)."""
+        return None if record.get("ignored") else record.get("last_seen") or ""
 
     async def async_take(self, predicate: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
         """Remove and return the records matching predicate."""

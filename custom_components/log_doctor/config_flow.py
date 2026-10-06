@@ -23,6 +23,19 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_FLAP_COUNT,
+    CONF_FLAP_HOURS,
+    CONF_INVESTIGATION_MODEL,
+    CONF_MONITOR_STOPPED_AUTOMATIONS,
+    CONF_WEEKLY_DIGEST,
+    CONF_WEEKLY_DIGEST_DAY,
+    DEFAULT_FLAP_COUNT,
+    DEFAULT_FLAP_HOURS,
+    DEFAULT_INVESTIGATION_MODEL,
+    DEFAULT_MONITOR_STOPPED_AUTOMATIONS,
+    DEFAULT_WEEKLY_DIGEST,
+    DEFAULT_WEEKLY_DIGEST_DAY,
+    WEEKDAYS,
     CONF_MONITOR_HEALTH,
     CONF_OFFLINE_HOURS,
     DEFAULT_MONITOR_HEALTH,
@@ -143,6 +156,12 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 )
             ),
             vol.Required(
+                CONF_MONITOR_STOPPED_AUTOMATIONS,
+                default=defaults.get(
+                    CONF_MONITOR_STOPPED_AUTOMATIONS, DEFAULT_MONITOR_STOPPED_AUTOMATIONS
+                ),
+            ): BooleanSelector(),
+            vol.Required(
                 CONF_MONITOR_HEALTH,
                 default=defaults.get(CONF_MONITOR_HEALTH, DEFAULT_MONITOR_HEALTH),
             ): BooleanSelector(),
@@ -154,6 +173,28 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                     min=1, max=168, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="h"
                 )
             ),
+            vol.Required(
+                CONF_FLAP_COUNT,
+                default=defaults.get(CONF_FLAP_COUNT, DEFAULT_FLAP_COUNT),
+            ): NumberSelector(
+                NumberSelectorConfig(min=0, max=100, step=1, mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(
+                CONF_FLAP_HOURS,
+                default=defaults.get(CONF_FLAP_HOURS, DEFAULT_FLAP_HOURS),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=168, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="h"
+                )
+            ),
+            vol.Required(
+                CONF_WEEKLY_DIGEST,
+                default=defaults.get(CONF_WEEKLY_DIGEST, DEFAULT_WEEKLY_DIGEST),
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_WEEKLY_DIGEST_DAY,
+                default=defaults.get(CONF_WEEKLY_DIGEST_DAY, DEFAULT_WEEKLY_DIGEST_DAY),
+            ): SelectSelector(SelectSelectorConfig(options=WEEKDAYS, translation_key="weekday")),
             # Optional and clearable, so use a suggested value rather than a
             # default (a default would be re-applied when cleared).
             vol.Optional(
@@ -165,6 +206,10 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(
                 CONF_OPENAI_API_KEY, default=defaults.get(CONF_OPENAI_API_KEY, "")
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Required(
+                CONF_INVESTIGATION_MODEL,
+                default=defaults.get(CONF_INVESTIGATION_MODEL, DEFAULT_INVESTIGATION_MODEL),
+            ): TextSelector(),
             vol.Required(
                 CONF_MAX_INVESTIGATED,
                 default=defaults.get(CONF_MAX_INVESTIGATED, DEFAULT_MAX_INVESTIGATED),

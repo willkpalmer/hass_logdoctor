@@ -18,6 +18,9 @@ What counts as a problem:
   failed to migrate or failed to unload (disabled ones aren't checked).
 - repair - an active issue in Home Assistant's Repairs that hasn't been
   ignored there.
+- flapping - a device (or an entity with no device) that keeps going
+  unavailable and coming back: at least the configured number of times
+  within the configured window (see flapping.py), however briefly.
 
 Entities of integrations that failed to load are left to the integration
 check, so one broken integration isn't also reported as dozens of devices.
@@ -45,6 +48,7 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.loader import async_get_integrations
 from homeassistant.util import dt as dt_util
 
+from .flapping import FlapTracker
 from .health_store import HealthStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,10 +92,12 @@ class HealthMonitor:
         store: HealthStore,
         *,
         offline_after: timedelta,
+        flaps: FlapTracker | None = None,
     ) -> None:
         self.hass = hass
         self.store = store
         self.offline_after = offline_after
+        self.flaps = flaps
         self._unsubs: list[Callable[[], None]] = []
 
     @callback
@@ -131,6 +137,7 @@ class HealthMonitor:
             current.update(self._integration_issues())
             current.update(self._device_issues())
             current.update(await self._repair_issues())
+            current.update(self._flap_issues())
             await self._name_integrations(current)
             await self.store.async_update(current)
         except Exception:  # noqa: BLE001 - never let a check break anything
@@ -230,6 +237,39 @@ class HealthMonitor:
                 "entities": sorted(e[0] for e in counted)[:_MAX_ENTITIES],
             }
 
+        return issues
+
+    def _flap_issues(self) -> dict[str, dict[str, Any]]:
+        if self.flaps is None:
+            return {}
+        flapping = self.flaps.flapping()
+        if not flapping:
+            return {}
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        area_reg = ar.async_get(self.hass)
+        hours = self.flaps.window.total_seconds() / 3600
+        window = f"{hours:g} hour{'' if hours == 1 else 's'}"
+        issues: dict[str, dict[str, Any]] = {}
+        for group, (times, entities) in flapping.items():
+            if dev_reg.async_get(group) is None and self.hass.states.get(group) is None:
+                continue  # removed since
+            name, sub, link, device = self._describe(group, dev_reg, area_reg)
+            last = max(times).astimezone(dt_util.get_default_time_zone()) if times else None
+            detail = f"Unavailable {len(times)} times in the last {window}"
+            if last is not None:
+                detail += f" · last {last.strftime('%H:%M')}"
+            issues[f"flapping:{group}"] = {
+                "kind": "flapping",
+                "name": name,
+                "sub": sub,
+                "integration": self._device_integration(device, group, ent_reg),
+                "detail": detail,
+                "since": min(times).isoformat() if times else None,
+                "link": link,
+                "entities": sorted(entities)[:_MAX_ENTITIES],
+                "flaps": len(times),
+            }
         return issues
 
     def _describe(

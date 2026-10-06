@@ -7,16 +7,24 @@ Shared by the lists on the Log Doctor sidebar panel:
 - health_store.py - device and integration problems ("Devices &
   integrations" view)
 - backup_store.py - backup problems and successes ("Backups" view)
+- restart_history.py - Home Assistant's restarts ("Restart history" view)
+- automation_runs.py - every automation run (Automations page, Runs)
 
 Each is kept in Home Assistant's storage as a list of records (dicts with
 at least an "id" and a "resolved" timestamp, None while open). Marking
 records resolved moves them to the archive; restoring moves them back;
 clearing the archive deletes every archived record for good. Saves are
 debounced, and anyone subscribed (the panel, via websocket_api.py) is told
-straight away after every change.
+straight away after every change: with None, meaning "read the whole list
+again", or - from lists that only grow at the end, like the automation
+runs - with a delta {"added": [records], "removed": [ids]}.
+
+Records age out with async_prune, run after every scan: each list says
+which time a record ages by (_prune_time), or that it's kept regardless.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, Callable
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -26,7 +34,8 @@ from homeassistant.util import dt as dt_util
 # Coalesce bursts of changes into one save.
 WRITE_DELAY = 5
 
-Listener = Callable[[], None]
+# Called with None (re-read the whole list) or a delta (see above).
+Listener = Callable[[dict[str, Any] | None], None]
 
 
 class ReviewList:
@@ -115,6 +124,28 @@ class ReviewList:
             self.async_changed()
         return removed
 
+    def _prune_time(self, record: dict[str, Any]) -> str | None:
+        """The UTC ISO time a record ages by; None keeps it however old.
+
+        By default nothing is pruned.
+        """
+        return None
+
+    async def async_prune(self, retention_days: int) -> int:
+        """Drop records older than the retention window (0 = keep all)."""
+        if retention_days <= 0:
+            return 0
+        cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
+        before = len(self._records)
+        self._records = [
+            r for r in self._records
+            if (when := self._prune_time(r)) is None or when >= cutoff
+        ]
+        removed = before - len(self._records)
+        if removed:
+            self.async_changed()
+        return removed
+
     @callback
     def async_trim(self) -> None:
         if len(self._records) > self.max_records:
@@ -130,15 +161,18 @@ class ReviewList:
         """
         self.closed = True
         await self._store.async_save(self._data_to_save())
-        for listener in list(self._listeners):
-            listener()
+        self._notify(None)
         self._listeners.clear()
 
     @callback
     def async_changed(self) -> None:
         self._store.async_delay_save(self._data_to_save, WRITE_DELAY)
+        self._notify(None)
+
+    @callback
+    def _notify(self, delta: dict[str, Any] | None) -> None:
         for listener in list(self._listeners):
-            listener()
+            listener(delta)
 
     def _data_to_save(self) -> dict[str, Any]:
         return {self.records_key: self._records}

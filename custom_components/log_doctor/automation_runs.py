@@ -21,15 +21,16 @@ record of its own, listed on the Excluded tab:
      "config_id", "when", "unmonitored"}
 
 Runs older than the report retention window are pruned with each scan,
-and at most max_records are kept. Automations can run many times a minute,
-so saves are delayed longer than other lists' and subscribers are told
-about changes at most once a second.
+and at most max_records are kept (the oldest runs go first). Automations
+can run many times a minute, so saves are delayed longer than other lists'
+and subscribers are told about changes at most once a second - and when
+all that happened was new runs (and the oldest dropped to make room), only
+those, as a delta, rather than the whole list again.
 """
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
 from typing import Any, Callable
 
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
@@ -61,6 +62,11 @@ class AutomationRunStore(ReviewList):
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__(hass)
         self._notify_unsub: CALLBACK_TYPE | None = None
+        # What's changed since subscribers were last told: runs added and
+        # ids removed, or (full) anything else, which sends the whole list.
+        self._added: list[dict[str, Any]] = []
+        self._removed: list[str] = []
+        self._full = False
 
     @staticmethod
     def sort_key(record: dict[str, Any]) -> str:
@@ -77,21 +83,43 @@ class AutomationRunStore(ReviewList):
             return
         state = self.hass.states.get(entity_id)
         trigger = event.data.get("source")
-        self._records.append(
-            {
-                "id": uuid.uuid4().hex,
-                "kind": KIND_RUN,
-                "entity_id": entity_id,
-                "name": event.data.get("name") or entity_id,
-                "config_id": state.attributes.get("id") if state else None,
-                "when": event.time_fired.isoformat(),
-                "trigger": trigger,
-                "manual": not trigger,
-                "resolved": None,
-            }
-        )
-        self.async_trim()
-        self.async_changed()
+        record = {
+            "id": uuid.uuid4().hex,
+            "kind": KIND_RUN,
+            "entity_id": entity_id,
+            "name": event.data.get("name") or entity_id,
+            "config_id": state.attributes.get("id") if state else None,
+            "when": event.time_fired.isoformat(),
+            "trigger": trigger,
+            "manual": not trigger,
+            "resolved": None,
+        }
+        self._records.append(record)
+        self._added.append(record)
+        self._drop_oldest_runs()
+        self._store.async_delay_save(self._data_to_save, _SAVE_DELAY)
+        self._schedule_notify()
+
+    def _drop_oldest_runs(self) -> None:
+        """Keep at most max_records, dropping the oldest runs.
+
+        Runs are added as they happen, so the oldest are the first in the
+        list; no sorting needed.
+        """
+        excess = len(self._records) - self.max_records
+        if excess <= 0:
+            return
+        dropped: set[str] = set()
+        for record in self._records:
+            if len(dropped) >= excess:
+                break
+            if record.get("kind") == KIND_RUN:
+                dropped.add(record["id"])
+        self._records = [r for r in self._records if r["id"] not in dropped]
+        # Runs added and dropped before subscribers heard of them: neither.
+        added_ids = {r["id"] for r in self._added}
+        self._removed.extend(i for i in dropped if i not in added_ids)
+        self._added = [r for r in self._added if r["id"] not in dropped]
 
     async def async_unmonitor(self, ids: list[str]) -> int:
         """Exclude the automations of the given runs: remove their runs, stop recording."""
@@ -140,33 +168,35 @@ class AutomationRunStore(ReviewList):
             self.async_changed()
         return count
 
-    async def async_prune(self, retention_days: int) -> None:
-        """Drop runs older than the retention window (excluded automations stay)."""
-        if retention_days <= 0:
-            return
-        cutoff = (dt_util.utcnow() - timedelta(days=retention_days)).isoformat()
-        before = len(self._records)
-        self._records = [
-            r
-            for r in self._records
-            if r.get("kind") == KIND_EXCLUDED or (r.get("when") or "") >= cutoff
-        ]
-        if len(self._records) != before:
-            self.async_changed()
+    def _prune_time(self, record: dict[str, Any]) -> str | None:
+        """Runs age by when they ran; excluded automations stay."""
+        if record.get("kind") == KIND_EXCLUDED:
+            return None
+        return record.get("when") or ""
 
     @callback
     def async_changed(self) -> None:
-        # Coalesced: a busy system can log many runs a minute, and every
-        # change sends the whole list to open panels.
+        """Anything but new runs: subscribers get the whole list again."""
+        self._full = True
         self._store.async_delay_save(self._data_to_save, _SAVE_DELAY)
+        self._schedule_notify()
+
+    @callback
+    def _schedule_notify(self) -> None:
+        # Coalesced: a busy system can log many runs a minute.
         if self._notify_unsub is None:
             self._notify_unsub = async_call_later(self.hass, _NOTIFY_DELAY, self._async_notify)
 
     @callback
     def _async_notify(self, _now: Any = None) -> None:
         self._notify_unsub = None
-        for listener in list(self._listeners):
-            listener()
+        if self._full:
+            delta = None
+        else:
+            delta = {"added": self._added, "removed": self._removed}
+        self._added, self._removed, self._full = [], [], False
+        if delta is None or delta["added"] or delta["removed"]:
+            self._notify(delta)
 
     async def async_shutdown(self) -> None:
         if self._notify_unsub is not None:

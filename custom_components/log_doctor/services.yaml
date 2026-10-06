@@ -9,3 +9,9 @@ clear_history:
   description: >-
     Forget which anomalies have already been reported. The next scan will
     treat everything it finds as new.
+
+send_weekly_digest:
+  name: Send weekly digest
+  description: >-
+    Send the weekly digest (the last seven days) now, as a notification and
+    to the daily summary's notify service if one is set.
