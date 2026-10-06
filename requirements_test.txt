@@ -1,4 +1,6 @@
-# Home Assistant itself, for the tests in tests/ (see tests/conftest.py).
+# Home Assistant itself, for the tests in tests/ (see tests/conftest.py),
+# and the integration's own requirement (manifest.json).
 homeassistant==2026.2.3
+openai>=1.0
 pytest
 pytest-asyncio
