@@ -2,7 +2,7 @@
 // log-doctor-panel.js for how the modules fit together).
 
 const V = new URL(import.meta.url).search;
-const { SWS } = await import(`./ld-util.js${V}`);
+const { SWS, upgradeProperties } = await import(`./ld-util.js${V}`);
 
 //
 // Everything from the integration's Configure dialog plus its entities
@@ -172,6 +172,10 @@ export class LogDoctorSettings extends HTMLElement {
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+  }
+
+  connectedCallback() {
+    upgradeProperties(this, ["hass"]);
   }
 
   set hass(hass) {

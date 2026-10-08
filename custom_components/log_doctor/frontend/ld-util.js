@@ -162,3 +162,17 @@ export function toMarkdown(title, header, rows) {
 export function num(n) {
   return Number(n || 0).toLocaleString();
 }
+
+// Home Assistant can create a panel's element, and set its hass, narrow and
+// panel, before the element's code has finished loading (the modules load
+// one after another). Those values then sit on the element itself and hide
+// the class's setters, so it would never hear about them: move them over.
+export function upgradeProperties(element, names) {
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(element, name)) {
+      const value = element[name];
+      delete element[name];
+      element[name] = value;
+    }
+  }
+}

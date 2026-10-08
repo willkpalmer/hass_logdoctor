@@ -6,7 +6,7 @@ const V = new URL(import.meta.url).search;
 const {
   BACKUP_SOURCES, COLLAPSED_KEY, OTHER_GROUP, PAGE_SIZE, SWS, VIEW_STATE_KEY, WS,
   duration, downloadFile, integrationPage, loadJSON, num, saveJSON, startupSeconds,
-  tabOf, toCSV, toMarkdown,
+  tabOf, toCSV, toMarkdown, upgradeProperties,
 } = await import(`./ld-util.js${V}`);
 const {
   HEALTH_KINDS, IGNORED_COLUMNS, RESOLVED_COLUMN, TAB_HINTS, VIEWS,
@@ -121,6 +121,7 @@ export class LogDoctorPanel extends HTMLElement {
   get panel() { return this._panel; }
 
   connectedCallback() {
+    upgradeProperties(this, ["hass", "narrow", "panel", "route"]);
     window.addEventListener("hashchange", this._onHash);
     window.addEventListener("keydown", this._onWindowKey);
     this._applyHash();

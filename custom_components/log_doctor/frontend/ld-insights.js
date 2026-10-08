@@ -9,7 +9,7 @@
 //   new - with buttons to send it now or save it as Markdown.
 
 const V = new URL(import.meta.url).search;
-const { SWS, downloadFile, num } = await import(`./ld-util.js${V}`);
+const { SWS, downloadFile, num, upgradeProperties } = await import(`./ld-util.js${V}`);
 
 const RANGES = [["24h", "24 hours"], ["7d", "7 days"], ["30d", "30 days"]];
 const RANGE_KEY = "log_doctor.insights_range";
@@ -135,6 +135,7 @@ export class LogDoctorInsights extends HTMLElement {
   }
 
   connectedCallback() {
+    upgradeProperties(this, ["hass"]);
     this._resize.observe(this);
   }
 
