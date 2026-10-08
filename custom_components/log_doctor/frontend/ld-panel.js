@@ -1159,7 +1159,16 @@ export class LogDoctorPanel extends HTMLElement {
       chip.title = "Run by hand: the Run button or the automation.trigger action";
       tdTrigger.appendChild(chip);
     } else {
-      tdTrigger.append(r.trigger || "");
+      // Which of its triggers (its name or a description of it), with Home
+      // Assistant's own description under it when that says something else.
+      tdTrigger.append(r.trigger_name || r.trigger || "");
+      if (r.trigger_name && r.trigger && r.trigger_name.toLowerCase() !== r.trigger.toLowerCase()) {
+        const sub = document.createElement("div");
+        sub.className = "sub";
+        sub.textContent = r.trigger;
+        sub.title = "Home Assistant's description of what triggered it";
+        tdTrigger.appendChild(sub);
+      }
     }
     tr.appendChild(tdTrigger);
   }

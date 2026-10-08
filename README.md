@@ -466,9 +466,17 @@ since both runs failed.
 Every automation run, recorded as it happens (`/log-doctor#runs`), newest
 first: **Ran** (when its actions started - runs stopped by their
 conditions aren't included), **Automation** (links to its traces) and
-**Trigger** - Home Assistant's description of what triggered it, such as
-"state of binary_sensor.motion" or "time pattern", or **Manual** when it
-was run by hand (the Run button or the `automation.trigger` action).
+**Trigger** - which of the automation's triggers started it: its name, if
+you've renamed it in the automation editor, or otherwise a short
+description of it such as "Sunset +00:15:00", "At 07:30", "Time pattern:
+every 15 minutes" or "Front door → on for 00:02:00" - with Home Assistant's
+own, more general description ("sun event sunset") under it - or
+**Manual** when it was run by hand (the Run button or the
+`automation.trigger` action). Which trigger it was comes from the run's
+trace; for an automation that keeps no traces (`stored_traces: 0`) it's
+only known when the automation has one trigger of that kind, and
+otherwise, like for runs recorded before 0.41.0, just Home Assistant's
+description is shown.
 Filter by automation or trigger in the filter box, to one automation with
 the automation drop-down, to triggered or manual runs only, and by time:
 **Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24 hours** (or

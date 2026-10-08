@@ -197,7 +197,7 @@ export const VIEWS = {
     filterPlaceholder: "Filter by automation or trigger",
     kinds: [["", "Everything"], ["triggered", "Triggered"], ["manual", "Manual"]],
     kindOf: (r) => (r.manual ? "manual" : "triggered"),
-    search: (r) => `${r.name} ${r.entity_id} ${r.manual ? "Manual" : r.trigger || ""}`,
+    search: (r) => `${r.name} ${r.entity_id} ${r.manual ? "Manual" : `${r.trigger_name || ""} ${r.trigger || ""}`}`,
     defaultSort: { key: "when", dir: -1 },
     // Grouped by day (in Home Assistant's time zone), newest first, each
     // collapsible; the day is worked out once per update (see _onMessage).
@@ -242,8 +242,8 @@ export const VIEWS = {
       open: "Every automation run as it happens, and what triggered it. Automations stopped by their conditions aren't runs.",
       unmonitored: "Automations whose runs aren't recorded. Their runs already recorded were removed.",
     },
-    exportHeader: ["Ran", "Automation", "Entity", "Trigger"],
-    exportRow: (r, p) => [p._dateTime(r.when), r.name, r.entity_id, runTrigger(r)],
+    exportHeader: ["Ran", "Automation", "Entity", "Trigger", "Home Assistant's description"],
+    exportRow: (r, p) => [p._dateTime(r.when), r.name, r.entity_id, runTrigger(r), r.manual ? "" : r.trigger || ""],
   },
   health: {
     list: "health",

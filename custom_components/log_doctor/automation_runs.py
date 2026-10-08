@@ -6,11 +6,14 @@ automation_triggered event - fired when an automation's actions start, so
 runs stopped by their conditions aren't included:
 
     {"id", "kind": "run", "entity_id", "name", "config_id", "when",
-     "trigger", "manual"}
+     "trigger", "trigger_name", "manual"}
 
 - trigger is Home Assistant's description of what triggered it (e.g.
-  "state of binary_sensor.door"). A run started by hand - the Run button or
-  the automation.trigger action - has none and is marked manual.
+  "sun event sunset"), trigger_name which of the automation's triggers it
+  was: its alias, or a description of its config like "Sunset +00:15:00"
+  (see trigger_names.py; None when that can't be worked out, and on runs
+  recorded before 0.41.0). A run started by hand - the Run button or the
+  automation.trigger action - has neither and is marked manual.
 - config_id addresses the automation's editor and traces.
 
 Automations can be excluded: their runs are removed and no more are
@@ -38,6 +41,7 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 from .review_list import ReviewList
+from .trigger_names import run_trigger_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,6 +95,7 @@ class AutomationRunStore(ReviewList):
             "config_id": state.attributes.get("id") if state else None,
             "when": event.time_fired.isoformat(),
             "trigger": trigger,
+            "trigger_name": run_trigger_name(self.hass, event) if trigger else None,
             "manual": not trigger,
             "resolved": None,
         }

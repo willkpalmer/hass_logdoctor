@@ -14,6 +14,7 @@ import pytest_asyncio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from homeassistant import config_entries, loader  # noqa: E402
 from homeassistant.core import HomeAssistant  # noqa: E402
 from homeassistant.helpers import area_registry as ar  # noqa: E402
 from homeassistant.helpers import device_registry as dr  # noqa: E402
@@ -26,6 +27,10 @@ async def hass(tmp_path):
     instance = HomeAssistant(str(tmp_path))
     instance.config.config_dir = str(tmp_path)
     frame.async_setup(instance)
+    # For the tests that set up Home Assistant's own integrations.
+    loader.async_setup(instance)
+    instance.config_entries = config_entries.ConfigEntries(instance, {})
+    await instance.config_entries.async_initialize()
     await ar.async_load(instance)
     await dr.async_load(instance)
     await er.async_load(instance)

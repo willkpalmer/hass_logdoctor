@@ -99,9 +99,10 @@ export function duration(fromIso, toIso) {
   const sec = String(seconds % 60).padStart(2, "0");
   return h ? `${h}h ${String(m).padStart(2, "0")}m` : m ? `${m}m ${sec}s` : `${seconds}s`;
 }
-// What started an automation run: its trigger, or Manual.
+// What started an automation run: which of its triggers (its name, see
+// trigger_names.py), Home Assistant's description of it, or Manual.
 export function runTrigger(r) {
-  return r.manual ? "Manual" : r.trigger || "";
+  return r.manual ? "Manual" : r.trigger_name || r.trigger || "";
 }
 
 
