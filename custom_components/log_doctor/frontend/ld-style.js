@@ -21,6 +21,7 @@ export const STYLE = `
   flex: none;
 }
 .header h1 { font-size: 20px; font-weight: 400; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header .version { font-size: 13px; opacity: 0.8; margin-left: 4px; }
 .menu-btn { display: none; background: none; border: 0; color: inherit; font-size: 22px; cursor: pointer; padding: 4px 8px; }
 :host([narrow]) .menu-btn { display: inline-block; }
 .content {
@@ -275,7 +276,7 @@ log-doctor-insights { flex: 1 1 auto; min-height: 0; overflow: auto; }
 export const TEMPLATE = `
 <div class="header">
   <button class="menu-btn" title="Menu" aria-label="Menu" data-action="menu">&#9776;</button>
-  <h1>Log Doctor</h1>
+  <h1>Log Doctor <span class="version" data-el="version"></span></h1>
   <a class="scan-status" data-el="scan-status" data-view="settings" href="#settings" title="The last scan - open Settings for the details"></a>
 </div>
 <div class="content">

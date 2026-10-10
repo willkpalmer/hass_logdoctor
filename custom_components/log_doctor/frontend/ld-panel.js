@@ -3,6 +3,8 @@
 // how the modules fit together).
 
 const V = new URL(import.meta.url).search;
+// The version loaded, from the ?v= every module is loaded with (panel.py).
+const VERSION = new URLSearchParams(V).get("v") || "";
 const {
   BACKUP_SOURCES, COLLAPSED_KEY, OTHER_GROUP, PAGE_SIZE, SWS, VIEW_STATE_KEY, WS,
   duration, downloadFile, integrationPage, loadJSON, num, saveJSON, startupSeconds,
@@ -64,6 +66,7 @@ export class LogDoctorPanel extends HTMLElement {
     this._undo = null;
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `<style>${STYLE}</style>${TEMPLATE}`;
+    this.shadowRoot.querySelector('[data-el="version"]').textContent = VERSION ? `v${VERSION}` : "";
     this._el = (name) => this.shadowRoot.querySelector(`[data-el="${name}"]`);
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
