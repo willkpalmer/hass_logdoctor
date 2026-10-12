@@ -20,8 +20,10 @@ export const VIEWS = {
     list: "anomalies",
     noun: ["entry", "entries"],
     filterPlaceholder: "Filter by logger or message",
-    kinds: [["", "All levels"], ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"]],
+    kinds: [["", "All levels"], ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"], ["setup", "Setup failures"]],
     kindOf: (r) => r.level,
+    // Integrations failing to set up (see setup_failures.py).
+    matches: (r, kind) => (kind === "setup" ? !!r.setup_domain : r.level === kind),
     search: (r) => `${r.logger} ${r.message} ${r.level}`,
     defaultSort: { key: "logged", dir: -1 },
     empty: {
@@ -62,10 +64,12 @@ export const VIEWS = {
     filterPlaceholder: "Filter by logger or message",
     kinds: [
       ["", "Everything"], ["startup", "Startup"], ["shutdown", "Shutdown"],
-      ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"],
+      ["CRITICAL", "Critical"], ["ERROR", "Error"], ["WARNING", "Warning"], ["setup", "Setup failures"],
     ],
     kindOf: (r) => r.level,
-    matches: (r, kind) => (kind === "startup" || kind === "shutdown" ? (r.phases || []).includes(kind) : r.level === kind),
+    matches: (r, kind) => (kind === "startup" || kind === "shutdown"
+      ? (r.phases || []).includes(kind)
+      : kind === "setup" ? !!r.setup_domain : r.level === kind),
     search: (r) => `${r.logger} ${r.message} ${r.level} ${(r.phases || []).join(" ")}`,
     defaultSort: { key: "logged", dir: -1 },
     empty: {
@@ -251,15 +255,18 @@ export const VIEWS = {
     filterPlaceholder: "Filter by name, area or problem",
     kinds: [
       ["", "Everything"], ["offline", "Offline devices"], ["unavailable", "Unavailable entities"],
-      ["not_provided", "Not provided"], ["flapping", "Flapping devices"], ["integration", "Integrations"], ["repair", "Repairs"],
+      ["not_provided", "Not provided"], ["not_loaded", "Not loaded"], ["flapping", "Flapping devices"], ["integration", "Integrations"], ["repair", "Repairs"],
     ],
     kindOf: (r) => r.kind,
     // Not provided: entries with entities their integration no longer
     // provides (an offline or unavailable one's "N no longer provided").
+    // Not loaded: integrations, platforms and devices' entities Home
+    // Assistant couldn't set up.
     matches: (r, kind) => (kind === "not_provided"
       ? (r.detail || "").includes("no longer provided")
-      : r.kind === kind),
-    search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")}`,
+      : kind === "not_loaded" ? /not loaded/i.test(r.detail || "")
+        : r.kind === kind),
+    search: (r) => `${r.name} ${r.sub} ${r.detail} ${r.integration_name || ""} ${(r.entities || []).join(" ")} ${(r.devices || []).join(" ")}`,
     // Rows are shown under a heading for their integration
     groupBy: (r) => r.integration_name || r.integration || OTHER_GROUP,
     // Home Assistant's own parts (automations, scripts, helpers, ...) first.

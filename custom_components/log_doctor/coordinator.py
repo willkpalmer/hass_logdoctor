@@ -63,6 +63,7 @@ from .failure_store import FailureStore
 from .health_store import HealthStore
 from .report_files import async_write_report
 from .restarts import RestartTracker
+from .setup_failures import setup_failure_domain
 from .stats import StatsStore
 from .store import LogDoctorStore
 from .weekly_digest import WeeklyDigest, async_send_digest
@@ -352,7 +353,11 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                     tally["signatures"].add(report.signature)
             report.phases = sorted(phases)
             report.restart_runs = sorted(runs)
-            if timed:
+            if setup_failure_domain(report.group.logger, report.group.example_message):
+                # An integration failing to set up is a fault, not startup
+                # noise: it stays on the Log review unless moved by hand.
+                report.restart = self.anomaly_store.is_manual_restart(report.signature)
+            elif timed:
                 report.restart = self.anomaly_store.is_restart_only(
                     report.signature, restart_lines_only=not while_running
                 )

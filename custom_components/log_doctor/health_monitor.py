@@ -15,7 +15,12 @@ What counts as a problem:
   tidy up. Entities the integration no longer provides (restored by Home
   Assistant as unavailable) are counted straight away and called out.
 - integration - a config entry that failed to set up, is retrying setup,
-  failed to migrate or failed to unload (disabled ones aren't checked).
+  failed to migrate or failed to unload (disabled ones aren't checked);
+  one that hasn't been loaded at all (its integration failed to set up,
+  so its entries were never tried), two checks running; and one of whose
+  platforms (sensor, light, ...) failed to set up while the rest loaded.
+  Each lists the devices affected and the log messages about it from the
+  Log review (see setup_failures.py), the setup failure first.
 - repair - an active issue in Home Assistant's Repairs that hasn't been
   ignored there.
 - flapping - a device (or an entity with no device) that keeps going
@@ -24,6 +29,9 @@ What counts as a problem:
 
 Entities of integrations that failed to load are left to the integration
 check, so one broken integration isn't also reported as dozens of devices.
+Entities of a platform that failed to load are still counted on their
+device, but as "not loaded" rather than "no longer provided": they're
+still there, Home Assistant just couldn't set them up.
 
 Home Assistant resets every entity's "last changed" time on restart, so
 right after a restart a device that was already offline only counts from
@@ -36,18 +44,20 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.entity_platform import async_get_platforms
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.loader import async_get_integrations
 from homeassistant.util import dt as dt_util
 
+from .anomaly_store import AnomalyStore
 from .flapping import FlapTracker
 from .health_store import HealthStore
 
@@ -60,6 +70,9 @@ FIRST_CHECK_DELAY = 300
 
 # Most entity IDs listed per problem.
 _MAX_ENTITIES = 25
+# Most devices and log messages listed per integration problem.
+_MAX_DEVICES = 25
+_MAX_MESSAGES = 5
 
 _BAD_ENTRY_STATES = {
     ConfigEntryState.SETUP_ERROR: "Failed to set up",
@@ -93,11 +106,17 @@ class HealthMonitor:
         *,
         offline_after: timedelta,
         flaps: FlapTracker | None = None,
+        anomalies: AnomalyStore | None = None,
     ) -> None:
         self.hass = hass
         self.store = store
         self.offline_after = offline_after
         self.flaps = flaps
+        # The Log review's anomalies, for each integration problem's messages.
+        self.anomalies = anomalies
+        # Config entries found not loaded by the last check (see
+        # _integration_issues).
+        self._not_loaded: set[str] = set()
         self._unsubs: list[Callable[[], None]] = []
 
     @callback
@@ -138,6 +157,7 @@ class HealthMonitor:
             current.update(self._device_issues())
             current.update(await self._repair_issues())
             current.update(self._flap_issues())
+            self._add_log_messages(current)
             await self._name_integrations(current)
             await self.store.async_update(current)
         except Exception:  # noqa: BLE001 - never let a check break anything
@@ -147,22 +167,122 @@ class HealthMonitor:
 
     def _integration_issues(self) -> dict[str, dict[str, Any]]:
         issues = {}
+        dev_reg = dr.async_get(self.hass)
+        ent_reg = er.async_get(self.hass)
+        not_loaded: set[str] = set()
         for entry in self.hass.config_entries.async_entries():
-            if entry.disabled_by or entry.state not in _BAD_ENTRY_STATES:
+            if entry.disabled_by or entry.source == SOURCE_IGNORE:
                 continue
-            detail = _BAD_ENTRY_STATES[entry.state]
-            if entry.reason:
-                detail += f": {entry.reason}"
+            if entry.state is ConfigEntryState.NOT_LOADED:
+                # Never set up - its integration failed to - or being
+                # reloaded right now: only reported if it still isn't at the
+                # next check.
+                not_loaded.add(entry.entry_id)
+                if entry.entry_id not in self._not_loaded or self.hass.state is not CoreState.running:
+                    continue
+                detail = "Not loaded"
+            elif entry.state in _BAD_ENTRY_STATES:
+                detail = _BAD_ENTRY_STATES[entry.state]
+                if entry.reason:
+                    detail += f": {entry.reason}"
+            else:
+                continue
+            devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
             issues[f"integration:{entry.entry_id}"] = {
                 "kind": "integration",
                 "name": entry.title or entry.domain,
                 "sub": entry.domain,
                 "integration": entry.domain,
-                "detail": detail,
+                "detail": detail + _affected(devices),
                 "link": f"/config/integrations/integration/{entry.domain}",
-                "entities": [],
+                "entities": sorted(e.entity_id for e in entities if not e.disabled_by)[:_MAX_ENTITIES],
+                "devices": _device_names(devices),
+            }
+        self._not_loaded = not_loaded
+        issues.update(self._platform_issues())
+        return issues
+
+    def _failed_platforms(self) -> dict[str, set[str]]:
+        """{config entry id: entity domains whose platform didn't set up}.
+
+        Home Assistant keeps an entry's platforms (sensor, light, ...) even
+        when their setup failed or is still being retried; only loaded
+        entries are looked at.
+        """
+        failed: dict[str, set[str]] = {}
+        for entry in self.hass.config_entries.async_entries():
+            if entry.state is not ConfigEntryState.LOADED or entry.disabled_by:
+                continue
+            for platform in async_get_platforms(self.hass, entry.domain):
+                if platform.config_entry is not entry:
+                    continue
+                if not getattr(platform, "_setup_complete", True):
+                    failed.setdefault(entry.entry_id, set()).add(platform.domain)
+        return failed
+
+    def _platform_issues(self) -> dict[str, dict[str, Any]]:
+        issues = {}
+        dev_reg = dr.async_get(self.hass)
+        ent_reg = er.async_get(self.hass)
+        for entry_id, domains in self._failed_platforms().items():
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            entities = [
+                e for e in er.async_entries_for_config_entry(ent_reg, entry_id)
+                if e.domain in domains and not e.disabled_by
+            ]
+            devices = [
+                device for device_id in sorted({e.device_id for e in entities if e.device_id})
+                if (device := dev_reg.async_get(device_id)) is not None
+            ]
+            names = ", ".join(sorted(domains))
+            issues[f"platform:{entry_id}"] = {
+                "kind": "integration",
+                "name": entry.title or entry.domain,
+                "sub": entry.domain,
+                "integration": entry.domain,
+                "detail": f"{names} platform{'s' if len(domains) > 1 else ''} not loaded" + _affected(devices),
+                "link": f"/config/integrations/integration/{entry.domain}",
+                "entities": sorted(e.entity_id for e in entities)[:_MAX_ENTITIES],
+                "devices": _device_names(devices),
             }
         return issues
+
+    def _add_log_messages(self, issues: dict[str, dict[str, Any]]) -> None:
+        """Each integration problem's messages on the Log review.
+
+        Setup failures about the integration (see setup_failures.py) first,
+        then its own warnings and errors, newest first.
+        """
+        if self.anomalies is None:
+            return
+        records = self.anomalies.records
+        for issue in issues.values():
+            domain = issue.get("integration")
+            if issue.get("kind") != "integration" or not domain:
+                continue
+            own = (f"homeassistant.components.{domain}", f"custom_components.{domain}")
+            found = [
+                r for r in records
+                if r.get("setup_domain") == domain
+                or any(r.get("logger", "") == p or r.get("logger", "").startswith(p + ".") for p in own)
+            ]
+            found.sort(key=lambda r: r.get("last_seen") or "", reverse=True)
+            found.sort(key=lambda r: not r.get("setup_domain"))
+            issue["log_messages"] = [
+                {
+                    "id": r["id"],
+                    "level": r.get("level"),
+                    "logger": r.get("logger"),
+                    "message": (r.get("message") or "")[:300],
+                    "category": r.get("category") or "operational",
+                    "last_logged": r.get("last_logged") or r.get("last_seen"),
+                    "setup": bool(r.get("setup_domain")),
+                }
+                for r in found[:_MAX_MESSAGES]
+            ]
 
     # -- devices ----------------------------------------------------------
 
@@ -172,8 +292,9 @@ class HealthMonitor:
         area_reg = ar.async_get(self.hass)
         now = dt_util.utcnow()
 
-        # group -> [(entity_id, last_changed, primary, restored)]
-        unavailable: dict[str, list[tuple[str, datetime, bool, bool]]] = {}
+        failed_platforms = self._failed_platforms()
+        # group -> [(entity_id, last_changed, primary, restored, not_loaded)]
+        unavailable: dict[str, list[tuple[str, datetime, bool, bool, bool]]] = {}
 
         for state in self.hass.states.async_all():
             if state.state != STATE_UNAVAILABLE:
@@ -188,8 +309,14 @@ class HealthMonitor:
             # Home Assistant restores a registered entity its integration
             # no longer provides as unavailable, with "restored": true.
             restored = bool(state.attributes.get("restored"))
+            # Its platform failed to set up: still there, just not loaded.
+            not_loaded = (
+                entry is not None
+                and entry.config_entry_id is not None
+                and entry.domain in failed_platforms.get(entry.config_entry_id, ())
+            )
             unavailable.setdefault(group, []).append(
-                (state.entity_id, state.last_changed, primary, restored)
+                (state.entity_id, state.last_changed, primary, restored and not not_loaded, not_loaded)
             )
 
         issues: dict[str, dict[str, Any]] = {}
@@ -198,12 +325,13 @@ class HealthMonitor:
             # Entities no longer provided are reported straight away; others
             # once they've been unavailable for the configured time.
             counted = [
-                e for e in entities if e[3] or now - e[1] >= self.offline_after
+                e for e in entities if e[3] or e[4] or now - e[1] >= self.offline_after
             ]
             if not counted:
                 continue
             since = min(e[1] for e in counted)
             gone = sum(1 for e in counted if e[3])
+            not_loaded = sum(1 for e in counted if e[4])
             name, sub, link, device = self._describe(group, dev_reg, area_reg)
             integration = self._device_integration(device, group, ent_reg)
             if device is not None:
@@ -219,12 +347,18 @@ class HealthMonitor:
                 else:
                     detail = f"{len(counted)} of {len(present)} entities unavailable"
             else:
-                offline = counted[0][2] and not gone
+                offline = counted[0][2] and not gone and not not_loaded
                 detail = "Offline" if offline else "Unavailable"
             if gone:
                 detail += (
                     " · no longer provided" if device is None
                     else f" · {gone} no longer provided"
+                )
+            if not_loaded:
+                # See the integration's "platform not loaded" problem.
+                detail += (
+                    " · not loaded (integration problem)" if device is None
+                    else f" · {not_loaded} not loaded (integration problem)"
                 )
             issues[f"offline:{group}"] = {
                 "kind": "offline" if offline else "unavailable",
@@ -383,3 +517,13 @@ class HealthMonitor:
             }
         return issues
 
+
+
+def _affected(devices: list[dr.DeviceEntry]) -> str:
+    if not devices:
+        return ""
+    return f" · {len(devices)} device{'' if len(devices) == 1 else 's'} affected"
+
+
+def _device_names(devices: list[dr.DeviceEntry]) -> list[str]:
+    return sorted(d.name_by_user or d.name or d.id for d in devices)[:_MAX_DEVICES]

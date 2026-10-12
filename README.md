@@ -396,6 +396,20 @@ retention window (default 30 days) are pruned after each scan; at most
 The per-scan Markdown reports in `logdoctor/reviews/` are unchanged -
 they're a record of each scan, while this list is what's still open.
 
+**Setup failures** - Home Assistant's messages about an integration
+failing to set up ("Setup failed for 'zha': …", "Error setting up entry …
+for hue", "Error while setting up tuya platform for sensor", "… not ready
+yet; Retrying in background") - are marked **Setup failure**, and the
+level drop-down has a **Setup failures** filter. They're logged through
+Home Assistant's own loggers (`homeassistant.setup`,
+`homeassistant.config_entries`, the entity platforms), not the
+integration's, so look for the integration's name in the message. Though
+they're logged while Home Assistant starts, they stay here rather than on
+Startup & shutdown - a failed integration is a fault, not startup noise -
+unless you move one there yourself; ones filed there before 0.43.0 are
+moved back. Each is also listed under the integration's problem on
+[Devices & integrations](#devices--integrations).
+
 Backup warnings and errors aren't in this list - they're in
 [Backups](#backups) instead, so a failing backup is only listed once.
 Anomalies logged only while Home Assistant was starting or shutting down
@@ -517,8 +531,18 @@ after Home Assistant starts, once things have had time to come up):
   without waiting for the offline time, and called out as "no longer
   provided". Click the device's name to open it and remove them.
 - **Integration** - an integration that failed to set up, is retrying
-  setup, or failed to migrate, with the reason Home Assistant gives.
-  Disabled integrations aren't checked.
+  setup, or failed to migrate, with the reason Home Assistant gives; one
+  that **wasn't loaded** at all (typically because the integration itself
+  failed to set up, so its entries were never tried - reported once it's
+  still not loaded at the next check, so a reload in progress isn't); and
+  one of whose **platforms** didn't load ("sensor platform not loaded")
+  while the rest of it did. Each says how many devices are affected; ▸
+  lists them, the entities that aren't loaded, and the **log messages**
+  about it from the Log review or Startup & shutdown - Home Assistant's
+  setup failure first (marked **Setup failure**), then the integration's
+  own warnings and errors. Click one to open it there. Disabled
+  integrations, and ones you've told Home Assistant to ignore, aren't
+  checked.
 - **Repair** - an issue from Home Assistant's own **Repairs** page that
   hasn't been ignored there, with its severity and, if it has one, the
   version it breaks in.
@@ -537,7 +561,11 @@ after Home Assistant starts, once things have had time to come up):
 
 Devices of an integration that failed to load are left to that
 integration's entry, so one broken integration isn't reported as dozens
-of devices.
+of devices. Entities of a platform that didn't load are still shown on
+their device, but as "not loaded (integration problem)" rather than "no
+longer provided" - they're still there, Home Assistant just couldn't set
+them up - and the integration's heading gets a **Not loaded · N devices
+affected ↗** link (to its page) ahead of the others.
 
 Batteries aren't checked: battery data is too inconsistent across
 integrations to report reliably. (Before 0.23.0 they were; any battery

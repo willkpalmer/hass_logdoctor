@@ -209,6 +209,7 @@ a:hover { text-decoration: underline; }
 .chip.failed, .chip.error { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning, .chip.stopped, .chip.slow { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.setup { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.flapping { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.running { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.phase { background: rgba(127, 127, 127, 0.15); color: var(--secondary-text-color, #727272); }

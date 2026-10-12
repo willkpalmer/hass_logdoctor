@@ -157,12 +157,12 @@ export class LogDoctorPanel extends HTMLElement {
     }
   }
 
-  _setView(view) {
+  _setView(view, { keepTab = false } = {}) {
     if ((!VIEWS[view] && !OTHER_PAGES.includes(view)) || view === this._view) return;
     this._view = view;
     history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}#${view}`);
     // Every page opens on its first tab.
-    if (VIEWS[view] && this._st().tab !== "open") {
+    if (VIEWS[view] && !keepTab && this._st().tab !== "open") {
       const st = this._st();
       st.tab = "open";
       st.selected.clear();
@@ -822,8 +822,26 @@ export class LogDoctorPanel extends HTMLElement {
     page.dataset.nav = "1";
     page.title = `Open ${pageLabel === "Integration ↗" ? "this integration's page" : `the ${pageLabel.replace(" ↗", "")} page`}`;
     page.textContent = pageLabel;
+    // The integration (or one of its platforms) didn't load: say so first,
+    // as it's why its devices' entities are unavailable.
+    const notLoaded = groupRows.filter((r) => r.kind === "integration" && /not loaded/i.test(r.detail || ""));
+    if (notLoaded.length) {
+      const devices = new Set(notLoaded.flatMap((r) => r.devices || []));
+      const a = document.createElement("a");
+      a.className = "group-link not-provided";
+      a.href = pageHref;
+      a.dataset.nav = "1";
+      a.title = "This integration, or one of its platforms, didn't load - so its devices' entities are unavailable, not gone. Expand its row below for the log messages.";
+      a.textContent = devices.size ? `Not loaded · ${devices.size} device${devices.size === 1 ? "" : "s"} affected ↗` : "Not loaded ↗";
+      return [page, a, ...this._entityLinks(groupRows, domain)];
+    }
+    return [page, ...this._entityLinks(groupRows, domain)];
+  }
+
+  // The Unavailable entities and Not provided links (see _groupLinks).
+  _entityLinks(groupRows, domain) {
     const entityRows = groupRows.filter((r) => (r.kind === "offline" || r.kind === "unavailable") && (r.entities || []).length);
-    if (!entityRows.length) return [page];
+    if (!entityRows.length) return [];
     const status = (key, fallback) =>
       this._hass?.localize?.(`ui.panel.config.entities.picker.status.${key}`) || fallback;
     const link = (label, search, title, kind) => {
@@ -842,7 +860,7 @@ export class LogDoctorPanel extends HTMLElement {
       links.push(link("Not provided ↗", status("not_provided", "Not provided"),
         "Open Settings → Entities for this integration, searching for entities it no longer provides", "not-provided"));
     }
-    return [page, ...links];
+    return links;
   }
 
   // Runs a scan (the Scan now button entity / log_doctor.scan_now). The
@@ -987,6 +1005,11 @@ export class LogDoctorPanel extends HTMLElement {
     if (r.recurred) {
       const chip = this._chip("recurred", "Recurred");
       chip.title = "Logged again after it was marked resolved";
+      tdLevel.appendChild(chip);
+    }
+    if (r.setup_domain) {
+      const chip = this._chip("setup", "Setup failure");
+      chip.title = `The ${r.setup_domain} integration failed to set up - see it on Devices & integrations`;
       tdLevel.appendChild(chip);
     }
     if (r.while_running) {
@@ -1252,11 +1275,11 @@ export class LogDoctorPanel extends HTMLElement {
     tr.appendChild(tdName);
 
     const tdDetail = this._td("", "text");
-    if ((r.entities || []).length) {
+    if ((r.entities || []).length || (r.devices || []).length || (r.log_messages || []).length) {
       const expand = document.createElement("button");
       expand.className = "expand";
       expand.dataset.expand = r.id;
-      expand.title = "Show the entities";
+      expand.title = r.kind === "integration" ? "Show the log messages, devices and entities" : "Show the entities";
       expand.textContent = this._st().expanded.has(r.id) ? "▾" : "▸";
       tdDetail.appendChild(expand);
     }
@@ -1275,9 +1298,59 @@ export class LogDoctorPanel extends HTMLElement {
     td.colSpan = span;
     const box = document.createElement("div");
     box.className = "detail-box";
-    const h = document.createElement("h4");
-    h.textContent = r.kind === "flapping" ? "Entities that went unavailable" : "Unavailable entities";
-    box.appendChild(h);
+    const heading = (text) => {
+      const h = document.createElement("h4");
+      h.textContent = text;
+      box.appendChild(h);
+    };
+    // An integration's log messages (from the Log review or Startup &
+    // shutdown), setup failures first; each opens its entry there.
+    if ((r.log_messages || []).length) {
+      heading("Log messages");
+      const list = document.createElement("ul");
+      list.className = "entity-list";
+      for (const m of r.log_messages) {
+        const li = document.createElement("li");
+        li.appendChild(this._chip((m.level || "").toLowerCase(), m.level || ""));
+        if (m.setup) li.appendChild(this._chip("setup", "Setup failure"));
+        const a = document.createElement("a");
+        a.href = m.category === "restart" ? "#restarts" : "#logs";
+        a.dataset.logId = m.id;
+        a.dataset.logView = m.category === "restart" ? "restarts" : "logs";
+        a.title = `Open it on ${m.category === "restart" ? "Startup & shutdown" : "the Log review"} (${m.logger})`;
+        a.textContent = m.message;
+        li.appendChild(a);
+        if (m.last_logged) {
+          const when = document.createElement("span");
+          when.className = "sub";
+          when.textContent = ` · ${this._dateTime(m.last_logged)}`;
+          li.appendChild(when);
+        }
+        list.appendChild(li);
+      }
+      box.appendChild(list);
+    } else if (r.kind === "integration") {
+      heading("Log messages");
+      box.appendChild(this._p("None on the Log review or Startup & shutdown. Run Scan now, or look for them in Home Assistant's log (Settings → System → Logs)."));
+    }
+    if ((r.devices || []).length) {
+      heading(`Devices affected (${r.devices.length})`);
+      const list = document.createElement("ul");
+      list.className = "entity-list";
+      for (const name of r.devices) {
+        const li = document.createElement("li");
+        li.textContent = name;
+        list.appendChild(li);
+      }
+      box.appendChild(list);
+    }
+    if (!(r.entities || []).length) {
+      td.appendChild(box);
+      tr.appendChild(td);
+      return tr;
+    }
+    heading(r.kind === "flapping" ? "Entities that went unavailable"
+      : r.kind === "integration" ? "Entities not loaded" : "Unavailable entities");
     const ul = document.createElement("ul");
     ul.className = "entity-list";
     // Each entry is one device's (or one entity with no device), so its
@@ -1294,7 +1367,7 @@ export class LogDoctorPanel extends HTMLElement {
       } else {
         a.href = "#";
         a.dataset.moreInfo = entityId;
-        a.title = "Open this entity (its settings let you remove it)";
+        a.title = r.kind === "integration" ? "Open this entity" : "Open this entity (its settings let you remove it)";
       }
       a.textContent = entityId;
       li.appendChild(a);
@@ -1407,6 +1480,25 @@ export class LogDoctorPanel extends HTMLElement {
     if (link) {
       ev.preventDefault();
       this._navigate(link.getAttribute("href"), link.dataset.search);
+      return;
+    }
+    // An integration problem's log message: its entry on the Log review
+    // (or Startup & shutdown), found by its message and opened.
+    const logLink = find("logId");
+    if (logLink) {
+      ev.preventDefault();
+      const name = logLink.dataset.logView;
+      const target = this._st(name);
+      const record = target.records.find((r) => r.id === logLink.dataset.logId);
+      target.tab = record ? tabOf(record) : "open";
+      target.filter = record ? record.message.slice(0, 80) : "";
+      target.kind = "";
+      target.run = null;
+      target.limit = PAGE_SIZE;
+      target.selected.clear();
+      if (record) target.expanded.add(record.id);
+      this._setView(name, { keepTab: true });
+      this._saveViewState();
       return;
     }
     // Restart history's Messages: that restart's on Startup & shutdown.

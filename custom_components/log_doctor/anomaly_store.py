@@ -7,7 +7,8 @@ message (see log_parser.py) - updated after every scan:
     {"id" (= signature), "level", "logger", "message", "count", "scans",
      "first_seen", "last_seen", "last_scan", "samples", "known_issue",
      "resolved", "recurred", "ignored", "ignored_count", "category",
-     "phases", "restarts", "restart_runs", "while_running", "last_logged"}
+     "phases", "restarts", "restart_runs", "while_running", "last_logged",
+     "setup_domain", "category_manual"}
 
 - last_seen is the latest of its lines' times; a line without a time of
   its own (some Supervisor sources) gets the scan's. last_logged is the
@@ -39,7 +40,12 @@ none) and "restart" (the Startup & shutdown view):
   normally becomes "operational", with while_running set to when, so the
   panel can mark it. An operational one never moves the other way by
   itself.
-- The panel can move anomalies either way by hand (async_set_category).
+- The panel can move anomalies either way by hand (async_set_category),
+  which sets category_manual.
+- An integration failing to set up (see setup_failures.py; setup_domain
+  is the integration) is a fault, not just noise from starting up, so it
+  stays on the Log review even though it's logged while starting - unless
+  it's been moved to Startup & shutdown by hand.
 - phases are the phases it was logged in ("startup", "shutdown"),
   restarts how many restarts it was logged during, and restart_runs the
   latest of those restarts' ids, so one split across two scans is only
@@ -57,6 +63,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import SEVERITY_ORDER
 from .log_parser import line_timestamp
+from .setup_failures import setup_failure_domain
 from .review_list import ReviewList
 
 if TYPE_CHECKING:
@@ -89,6 +96,16 @@ class AnomalyStore(ReviewList):
                 continue
             times = [t for raw in record.get("samples") or [] if (t := line_timestamp(raw))]
             record["last_logged"] = self._to_utc(max(times), max(times)) if times else None
+            filled = True
+        # Records from before 0.43.0: setup failures marked, and moved back
+        # to the Log review.
+        for record in self._records:
+            if "setup_domain" in record:
+                continue
+            domain = setup_failure_domain(record.get("logger") or "", record.get("message") or "")
+            record["setup_domain"] = domain
+            if domain and record.get("category") == CATEGORY_RESTART and not record.get("category_manual"):
+                record["category"] = CATEGORY_OPERATIONAL
             filled = True
         if filled:
             self.async_changed()
@@ -123,6 +140,7 @@ class AnomalyStore(ReviewList):
             record = self._upsert_group(
                 by_id, report.group, scanned_at, known_issue=report.known_issue
             )
+            record["setup_domain"] = setup_failure_domain(record["logger"], record["message"])
             self._apply_restarts(record, report, scanned_at)
         self.async_trim()
         self.async_changed()
@@ -139,6 +157,15 @@ class AnomalyStore(ReviewList):
         record = next((r for r in self._records if r["id"] == signature), None)
         return record is None or record.get("category") == CATEGORY_RESTART
 
+    def is_manual_restart(self, signature: str) -> bool:
+        """Whether an anomaly was moved to Startup & shutdown by hand."""
+        record = next((r for r in self._records if r["id"] == signature), None)
+        return (
+            record is not None
+            and record.get("category") == CATEGORY_RESTART
+            and bool(record.get("category_manual"))
+        )
+
     def is_restart_category(self, signature: str) -> bool:
         """Whether a known anomaly is on the Startup & shutdown view."""
         record = next((r for r in self._records if r["id"] == signature), None)
@@ -150,7 +177,7 @@ class AnomalyStore(ReviewList):
         if report.restart:
             record["category"] = CATEGORY_RESTART
         else:
-            if record.get("category") == CATEGORY_RESTART:
+            if record.get("category") == CATEGORY_RESTART and not record.get("setup_domain"):
                 # Logged while running: it isn't just a restart message.
                 record["while_running"] = self._to_utc(scanned_at, scanned_at)
             record["category"] = CATEGORY_OPERATIONAL
@@ -171,6 +198,7 @@ class AnomalyStore(ReviewList):
         for record in self._records:
             if record["id"] in wanted and record.get("category", CATEGORY_OPERATIONAL) != category:
                 record["category"] = category
+                record["category_manual"] = True
                 record.pop("while_running", None)
                 count += 1
         if count:

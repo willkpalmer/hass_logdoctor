@@ -315,6 +315,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hours=int(options.get(CONF_OFFLINE_HOURS, DEFAULT_OFFLINE_HOURS))
             ),
             flaps=flaps,
+            anomalies=anomaly_store,
         )
         entry.async_on_unload(health_monitor.async_start())
         # "Monitor again" on the panel checks straight away.

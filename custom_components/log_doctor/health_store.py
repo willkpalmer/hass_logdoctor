@@ -52,7 +52,7 @@ from .review_list import ReviewList
 # Fields refreshed from every check.
 _DISPLAY_FIELDS = (
     "name", "sub", "detail", "link", "entities", "kind", "integration",
-    "integration_name", "integration_core", "flaps",
+    "integration_name", "integration_core", "flaps", "devices", "log_messages",
 )
 
 
