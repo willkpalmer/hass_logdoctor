@@ -45,8 +45,8 @@
 // and Backups entries can also be ignored, which moves them to Ignored,
 // where they're kept up to date without coming back by themselves; devices
 // and automations can be left unmonitored. Each action can be undone for a
-// few seconds. Each view's search, filters, tab and sort are remembered in
-// the browser.
+// few seconds. Each view's search, filters and sort are remembered in the
+// browser; pages always open on their first tab.
 //
 // The page itself doesn't scroll: the view buttons, tabs, toolbar and
 // column headings stay put and only the list scrolls (unless the window is

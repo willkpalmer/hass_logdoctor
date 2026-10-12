@@ -360,8 +360,9 @@ says what the current tab holds:
   <kbd>Space</kbd> to select, <kbd>Enter</kbd> to show its details (or
   collapse a heading, or sort by a column heading); <kbd>/</kbd> jumps to
   the filter and <kbd>Esc</kbd> clears the selection.
-- Each list's filter, drop-downs, tab and sort are remembered in your
-  browser, so the page opens as you left it.
+- Each list's filter, drop-downs and sort are remembered in your browser.
+  Pages always open on their first tab (**Open**, or **Runs**), whichever
+  tab you were on last.
 - New entries appear live, without refreshing. On a phone, each entry shows
   as a card and the column names become sort buttons.
 - The view buttons, tabs, filters, buttons and column headings stay in

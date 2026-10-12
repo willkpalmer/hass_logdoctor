@@ -37,7 +37,7 @@ export const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
 export const OTHER_GROUP = "Other";
 // Where the collapsed groups of each view are remembered, per browser.
 export const COLLAPSED_KEY = "log_doctor.collapsed_groups";
-// Where each view's search, filters, tab and sort are remembered.
+// Where each view's search, filters and sort are remembered.
 export const VIEW_STATE_KEY = "log_doctor.view_state";
 
 // Where an integration heading's first link goes: Home Assistant's own

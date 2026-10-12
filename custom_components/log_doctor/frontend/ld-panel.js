@@ -30,17 +30,18 @@ export class LogDoctorPanel extends HTMLElement {
     this._panel = null;
     this._view = "logs";
     this._state = {};
-    // Each view's search, filters, tab and sort, as left last time.
+    // Each view's search, filters and sort, as left last time. Pages
+    // always open on their first tab.
     const saved = loadJSON(VIEW_STATE_KEY, {});
     for (const [name, view] of Object.entries(VIEWS)) {
       const was = saved[name] || {};
-      const tabs = ["open", "archived", "ignored", "unmonitored"];
       this._state[name] = {
         records: [],
         loaded: false,
         error: null,
-        tab: tabs.includes(was.tab) ? was.tab : "open",
-        sort: was.sort?.key && (view.compare[was.sort.key] !== undefined || ["resolved", "ignored", "unmonitored", "active", "ignored_count"].includes(was.sort.key))
+        tab: "open",
+        // A column only another tab has (e.g. Archived) can't be the sort.
+        sort: was.sort?.key && view.columns.some((c) => c.key === was.sort.key)
           ? { key: was.sort.key, dir: was.sort.dir === 1 ? 1 : -1 }
           : { ...view.defaultSort },
         selected: new Set(),
@@ -160,6 +161,14 @@ export class LogDoctorPanel extends HTMLElement {
     if ((!VIEWS[view] && !OTHER_PAGES.includes(view)) || view === this._view) return;
     this._view = view;
     history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}#${view}`);
+    // Every page opens on its first tab.
+    if (VIEWS[view] && this._st().tab !== "open") {
+      const st = this._st();
+      st.tab = "open";
+      st.selected.clear();
+      st.limit = PAGE_SIZE;
+      if (!this._columns().some((c) => c.key === st.sort.key)) st.sort = { ...VIEWS[view].defaultSort };
+    }
     this._el("confirm").classList.remove("open");
     this._el("scroll").scrollTop = 0;
     this._syncControls();
@@ -280,7 +289,7 @@ export class LogDoctorPanel extends HTMLElement {
   _saveViewState() {
     const saved = {};
     for (const [name, st] of Object.entries(this._state)) {
-      saved[name] = { tab: st.tab, sort: st.sort, filter: st.filter, kind: st.kind, hours: st.hours, automation: st.automation };
+      saved[name] = { sort: st.sort, filter: st.filter, kind: st.kind, hours: st.hours, automation: st.automation };
     }
     saveJSON(VIEW_STATE_KEY, saved);
   }
