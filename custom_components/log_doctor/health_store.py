@@ -35,7 +35,12 @@ record tracks whether the problem is still there ("active"):
 - Marking a device (or an entity with no device) not monitored
   (unmonitored = when) stops reporting it altogether: checks leave its
   record alone, whatever becomes unavailable or isn't provided any more,
-  and it's listed on the Not monitored tab. That covers all of the
+  and it's listed on the Not monitored tab. A whole integration can be
+  left unmonitored the same way (async_unmonitor_integration): a record
+  of kind "integration_off" for it, on the Not monitored tab, and nothing
+  about the integration or any of its devices is reported - its open and
+  archived problems are removed (ignored ones and devices already not
+  monitored are kept as they are) - until it's monitored again. That covers all of the
   device's problems (offline, unavailable and flapping share its id after
   the "<kind>:" prefix). Monitoring it again removes
   the record and checks straight away (recheck), so a device that's still
@@ -58,6 +63,8 @@ _DISPLAY_FIELDS = (
 
 # Kinds that are a device or an entity, which can be marked not monitored.
 _DEVICE_KINDS = ("offline", "unavailable", "flapping")
+# A whole integration left unmonitored.
+KIND_INTEGRATION_OFF = "integration_off"
 
 
 def _device_of(issue_id: str) -> str | None:
@@ -95,8 +102,11 @@ class HealthStore(ReviewList):
             _device_of(record["id"]) for record in self._records if record.get("unmonitored")
         }
         unmonitored.discard(None)
+        integrations_off = self.integrations_off()
 
         for issue_id, issue in current.items():
+            if issue.get("integration") in integrations_off:
+                continue  # its integration isn't monitored
             record = by_id.get(issue_id)
             if record is not None and record.get("unmonitored"):
                 continue  # not reported any more
@@ -134,7 +144,7 @@ class HealthStore(ReviewList):
                 changed = True
 
         for record in self._records:
-            if record.get("unmonitored"):
+            if record.get("unmonitored") or record.get("integration") in integrations_off:
                 continue
             if record["id"] not in current and record.get("active") and record.get("ignored"):
                 # Cleared while ignored: it stays ignored.
@@ -197,8 +207,50 @@ class HealthStore(ReviewList):
             self.async_changed()
         return count
 
+    def integrations_off(self) -> set[str]:
+        """The integrations (domains) not monitored."""
+        return {
+            r["integration"] for r in self._records
+            if r.get("kind") == KIND_INTEGRATION_OFF and r.get("integration")
+        }
+
+    async def async_unmonitor_integration(self, domain: str, name: str | None = None) -> int:
+        """Stop reporting anything about an integration and its devices."""
+        if not domain or domain in self.integrations_off():
+            return 0
+        now = dt_util.utcnow().isoformat()
+        known = next((r for r in self._records if r.get("integration") == domain), {})
+        # Its open and archived problems go; ignored ones and devices already
+        # not monitored stay as they are, for when it's monitored again.
+        removed = [
+            r for r in self._records
+            if r.get("integration") == domain and not r.get("ignored") and not r.get("unmonitored")
+        ]
+        self._records = [r for r in self._records if r not in removed]
+        self._records.append(
+            {
+                "id": f"{KIND_INTEGRATION_OFF}:{domain}",
+                "kind": KIND_INTEGRATION_OFF,
+                "name": name or known.get("integration_name") or domain,
+                "sub": domain,
+                "detail": "Not monitored: none of its devices, entities or problems are reported",
+                "integration": domain,
+                "integration_name": name or known.get("integration_name") or domain,
+                "integration_core": known.get("integration_core", False),
+                "link": f"/config/integrations/integration/{domain}",
+                "entities": [],
+                "since": now,
+                "active": False,
+                "resolved": None,
+                "unmonitored": now,
+                "removed": len(removed),
+            }
+        )
+        self.async_changed()
+        return 1 + len(removed)
+
     async def async_monitor(self, ids: list[str]) -> int:
-        """Monitor devices again: forget them, then check straight away."""
+        """Monitor devices (or integrations) again: forget them, then check straight away."""
         wanted = set(ids)
         before = len(self._records)
         self._records = [

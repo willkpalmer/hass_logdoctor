@@ -19,6 +19,10 @@ monitoring devices on the Devices & integrations view ("health"), and
 exclude and include automations on the Automations page's Runs
 ("automation_runs").
 
+log_doctor/review/unmonitor_integration stops reporting a whole
+integration on Devices & integrations (log_doctor/review/monitor with its
+"integration_off:<domain>" record's id monitors it again).
+
 log_doctor/review/set_category moves Log review entries between the Log
 review ("operational") and Startup & shutdown ("restart") views.
 
@@ -43,6 +47,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from . import settings_api
 from .anomaly_store import CATEGORY_OPERATIONAL, CATEGORY_RESTART, AnomalyStore
+from .health_store import HealthStore
 from .investigation import anomaly_from_record, build_copy_prompt
 from .const import (
     DATA_ANOMALY_STORE,
@@ -65,6 +70,7 @@ WS_UNIGNORE = "log_doctor/review/unignore"
 WS_UNMONITOR = "log_doctor/review/unmonitor"
 WS_MONITOR = "log_doctor/review/monitor"
 WS_SET_CATEGORY = "log_doctor/review/set_category"
+WS_UNMONITOR_INTEGRATION = "log_doctor/review/unmonitor_integration"
 
 _LISTS = {
     "anomalies": DATA_ANOMALY_STORE,
@@ -92,6 +98,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_unmonitor)
     websocket_api.async_register_command(hass, websocket_monitor)
     websocket_api.async_register_command(hass, websocket_set_category)
+    websocket_api.async_register_command(hass, websocket_unmonitor_integration)
 
 
 def _get_list(
@@ -295,3 +302,26 @@ async def websocket_monitor(
 ) -> None:
     """Monitor devices again (Devices & integrations only)."""
     await _async_ignore(hass, connection, msg, "async_monitor")
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_UNMONITOR_INTEGRATION,
+        # Sent like every list action; only Devices & integrations has these.
+        vol.Optional("list"): vol.In(["health"]),
+        vol.Required("domain"): str,
+        vol.Optional("name"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_unmonitor_integration(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Stop reporting an integration and all of its devices."""
+    store: HealthStore | None = hass.data.get(DATA_HEALTH_STORE)
+    if store is None:
+        connection.send_error(msg["id"], "not_loaded", "WP Log Doctor isn't loaded")
+        return
+    count = await store.async_unmonitor_integration(msg["domain"], msg.get("name"))
+    connection.send_result(msg["id"], {"count": count})

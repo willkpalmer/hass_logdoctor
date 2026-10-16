@@ -644,6 +644,14 @@ These problems end by themselves, so this list keeps up with them:
   so they can be ignored but not left unmonitored. **Monitor again**
   removes a device from that tab and checks straight away, so one that's
   still unavailable is back on **Open** as a new problem.
+- **Stop monitoring** on an integration's heading does the same for the
+  whole integration, full stop: nothing about it or any of its devices
+  and entities - unavailable, not provided, offline, flapping, or the
+  integration failing to load - is reported. Its open and archived
+  entries are removed (ignored ones, and devices you'd already stopped
+  monitoring, are kept as they are), and it's listed on **Not monitored**
+  as an Integration entry; **Monitor again** there (or Undo straight
+  away) checks it straight away.
 
 Home Assistant resets every entity's "last changed" time when it restarts,
 so a device that was already offline before a restart counts from the

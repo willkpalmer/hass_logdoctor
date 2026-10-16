@@ -139,3 +139,34 @@ async def test_setup_failure_at_startup_stays_on_the_log_review(hass, tmp_path):
     LogDoctorCoordinator._classify_restarts(fake, reports)
     restart = {r.group.logger: r.restart for r in reports}
     assert restart == {"homeassistant.setup": False, "homeassistant.components.mqtt": True}
+
+
+async def test_integration_not_monitored(hass):
+    store = HealthStore(hass)
+    rechecked = []
+
+    async def recheck():
+        rechecked.append(True)
+
+    store.recheck = recheck
+    store._records = [
+        {"id": "offline:d1", "kind": "offline", "integration": "zha", "active": True, "resolved": None},
+        {"id": "offline:d2", "kind": "unavailable", "integration": "zha", "active": True, "resolved": None, "ignored": "2026-10-01T00:00:00+00:00"},
+        {"id": "offline:d3", "kind": "offline", "integration": "hue", "active": True, "resolved": None},
+    ]
+    assert await store.async_unmonitor_integration("zha", "Zigbee Home Automation") == 2
+    ids = {r["id"] for r in store.records}
+    assert ids == {"offline:d2", "offline:d3", "integration_off:zha"}
+    # Nothing about it is reported any more.
+    await store.async_update(
+        {
+            "offline:d1": {"kind": "offline", "integration": "zha", "entities": []},
+            "integration:e1": {"kind": "integration", "integration": "zha", "entities": []},
+            "offline:d3": {"kind": "offline", "integration": "hue", "entities": []},
+        }
+    )
+    assert {r["id"] for r in store.records} == ids
+    # Monitor it again: checked straight away.
+    assert await store.async_monitor(["integration_off:zha"]) == 1
+    await hass.async_block_till_done()
+    assert rechecked and "integration_off:zha" not in {r["id"] for r in store.records}

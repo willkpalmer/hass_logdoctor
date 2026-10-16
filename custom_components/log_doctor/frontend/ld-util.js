@@ -12,6 +12,7 @@ export const WS = {
   UNMONITOR: "log_doctor/review/unmonitor",
   MONITOR: "log_doctor/review/monitor",
   SET_CATEGORY: "log_doctor/review/set_category",
+  UNMONITOR_INTEGRATION: "log_doctor/review/unmonitor_integration",
   INVESTIGATION_PROMPT: "log_doctor/review/investigation_prompt",
 };
 

@@ -182,6 +182,11 @@ tbody tr.group .group-link.not-provided {
   color: var(--error-color, #db4437); border-color: var(--error-color, #db4437);
 }
 tbody tr.group .group-link.not-provided:hover { background: rgba(219, 68, 55, 0.12); }
+tbody tr.group .group-off {
+  font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; background: none;
+  color: var(--secondary-text-color, #727272); border: 1px solid var(--divider-color, #ccc);
+}
+tbody tr.group .group-off:hover { color: var(--primary-text-color, #212121); border-color: var(--secondary-text-color, #727272); }
 tbody tr.group .group-count { font-weight: 400; color: var(--secondary-text-color, #727272); }
 tbody tr.row.selected { background: rgba(3, 169, 244, 0.1); }
 tr.details td { border-top: 0; padding-top: 0; }
@@ -209,6 +214,7 @@ a:hover { text-decoration: underline; }
 .chip.failed, .chip.error { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning, .chip.stopped, .chip.slow { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.integration_off { background: rgba(127, 127, 127, 0.15); color: var(--secondary-text-color, #727272); }
 .chip.setup { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.flapping { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
 .chip.running { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }

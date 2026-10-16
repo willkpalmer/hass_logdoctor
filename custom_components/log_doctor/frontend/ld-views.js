@@ -280,7 +280,7 @@ export const VIEWS = {
       open: "No device or integration problems. 🎉",
       archived: "Nothing archived. Problems that clear up by themselves, and ones you archive, appear here.",
       ignored: "Nothing ignored. Problems you ignore - entities that are unavailable on purpose - appear here, still checked.",
-      unmonitored: "Every device is monitored. Devices you stop monitoring appear here, and nothing about them is reported until you monitor them again.",
+      unmonitored: "Every device and integration is monitored. Devices and integrations you stop monitoring appear here, and nothing about them is reported until you monitor them again.",
     },
     columns: [
       { key: "kind", label: "Type" },
@@ -310,6 +310,7 @@ export const VIEWS = {
       open: "Problems found by the check every 5 minutes. They're archived by themselves when they clear up, and come back marked Recurred if they return.",
       archived: "Cleared up by themselves, or archived by you while still there (they stay archived as long as they last).",
       ignored: "Still checked, and back on Open if another of the device's entities becomes unavailable.",
+      unmonitored: "Not checked at all until you monitor them again. A whole integration not monitored (Stop monitoring on its heading) covers all of its devices and entities.",
     },
     exportHeader: ["Type", "Integration", "Name", "Details", "Problem", "Since", "Entities"],
     exportRow: (r, p) => [HEALTH_KINDS[r.kind]?.label || r.kind, r.integration_name || r.integration || "", r.name, r.sub, r.detail, p._dateTime(r.since), (r.entities || []).join(" ")],
@@ -362,6 +363,7 @@ export const HEALTH_KINDS = {
   offline: { label: "Offline", order: 0 },
   unavailable: { label: "Unavailable", order: 1 },
   flapping: { label: "Flapping", order: 1.5 },
+  integration_off: { label: "Integration", order: 2.5 },
   integration: { label: "Integration", order: 2 },
   repair: { label: "Repair", order: 3 },
 };

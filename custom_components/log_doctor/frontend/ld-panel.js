@@ -602,6 +602,18 @@ export class LogDoctorPanel extends HTMLElement {
         count.textContent = ` (${groupSizes.get(lastGroup)})`;
         td.appendChild(count);
         if (view.groupLinks) td.append(...this._groupLinks(groupRows));
+        // Stop monitoring the whole integration (not on Not monitored, where
+        // it's listed instead).
+        const domain = groupRows.find((g) => g.integration)?.integration;
+        if (view.groupLinks && domain && st.tab !== "unmonitored" && lastGroup !== OTHER_GROUP) {
+          const off = document.createElement("button");
+          off.className = "group-link group-off";
+          off.dataset.unmonitorIntegration = domain;
+          off.dataset.name = lastGroup;
+          off.title = `Stop monitoring ${lastGroup} altogether: nothing about it or any of its devices and entities - unavailable, not provided, offline, flapping or failing to load - is reported until you monitor it again (Not monitored tab)`;
+          off.textContent = "Stop monitoring";
+          td.appendChild(off);
+        }
         trGroup.appendChild(td);
         frag.appendChild(trGroup);
       }
@@ -1538,6 +1550,18 @@ export class LogDoctorPanel extends HTMLElement {
     // Clicking anywhere else closes the Export menu.
     const exportMenu = this._el("export");
     if (exportMenu.open && !path.includes(exportMenu)) exportMenu.open = false;
+    // Stop monitoring a whole integration, from its heading.
+    const integrationOff = find("unmonitorIntegration");
+    if (integrationOff) {
+      const domain = integrationOff.dataset.unmonitorIntegration;
+      const name = integrationOff.dataset.name;
+      if (await this._call(WS.UNMONITOR_INTEGRATION, { domain, name })) {
+        this._showUndo(`Stopped monitoring ${name} - it's on the Not monitored tab`, {
+          type: WS.MONITOR, list: "health", ids: [`integration_off:${domain}`],
+        });
+      }
+      return;
+    }
     // A heading's checkbox selects (see _onChange), it doesn't collapse.
     if (find("groupSelect")) return;
     const groupRow = find("groupToggle");
