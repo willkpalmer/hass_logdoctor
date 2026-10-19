@@ -37,7 +37,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .config_flow import _build_schema
+from .config_flow import _build_schema, validate_schedule
 from .const import (
     CONF_WEEKLY_DIGEST,
     CONF_WEEKLY_DIGEST_DAY,
@@ -52,6 +52,11 @@ from .const import (
 )
 from .paths import failure_log_path, reviews_dir
 from .weekly_digest import async_build_digest
+
+_SCHEDULE_ERRORS = {
+    "scan_time": "Scan times: use HH:MM, separated by commas, e.g. 08:00, 20:00",
+    "scan_interval": "Scan every: at least every 5 minutes, at most once a week",
+}
 
 WS_GET = "log_doctor/settings/get"
 WS_UPDATE = "log_doctor/settings/update"
@@ -195,6 +200,15 @@ def websocket_update(
         connection.send_error(
             msg["id"], "invalid_format", f"{path}: {err.msg}" if path else str(err)
         )
+        return
+    # The scan schedule, which the schema's selectors can't check.
+    try:
+        scan_interval_check = validate_schedule(validated)
+    except Exception:  # noqa: BLE001
+        scan_interval_check = {"scan_time": "invalid_scan_time"}
+    if scan_interval_check:
+        field, _code = next(iter(scan_interval_check.items()))
+        connection.send_error(msg["id"], "invalid_format", _SCHEDULE_ERRORS.get(field, field))
         return
     validated.setdefault(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE, None)
     changed = validated != current

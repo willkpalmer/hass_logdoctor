@@ -6,7 +6,10 @@
         "description": "WP Log Doctor scans your Home Assistant log, matches problems against a built-in knowledge base, and reports what it finds. It never changes your configuration. Set an OpenAI API key to also automatically investigate anomalies with an OpenAI model after each scan.",
         "data": {
           "log_path": "Log file path",
-          "scan_time": "Daily scan time",
+          "scan_mode": "Scheduled scans",
+          "scan_time": "Scan times (one or more, separated by commas, e.g. 08:00, 20:00)",
+          "scan_interval": "Or scan every …",
+          "scan_interval_unit": "… minutes or hours",
           "min_severity": "Minimum severity to report",
           "lookback_hours": "Lookback window on first scan (hours)",
           "restart_grace_minutes": "Startup messages: count messages logged up to this many minutes after Home Assistant has finished starting",
@@ -33,6 +36,10 @@
     },
     "abort": {
       "already_configured": "WP Log Doctor is already configured."
+    },
+    "error": {
+      "invalid_scan_time": "Use times like 08:00, separated by commas (e.g. 08:00, 20:00).",
+      "invalid_scan_interval": "Scan at least every 5 minutes and at most once a week."
     }
   },
   "options": {
@@ -41,7 +48,10 @@
         "title": "WP Log Doctor settings",
         "data": {
           "log_path": "Log file path",
-          "scan_time": "Daily scan time",
+          "scan_mode": "Scheduled scans",
+          "scan_time": "Scan times (one or more, separated by commas, e.g. 08:00, 20:00)",
+          "scan_interval": "Or scan every …",
+          "scan_interval_unit": "… minutes or hours",
           "min_severity": "Minimum severity to report",
           "lookback_hours": "Lookback window on first scan (hours)",
           "restart_grace_minutes": "Startup messages: count messages logged up to this many minutes after Home Assistant has finished starting",
@@ -65,6 +75,10 @@
           "investigation_model": "OpenAI model used for investigations"
         }
       }
+    },
+    "error": {
+      "invalid_scan_time": "Use times like 08:00, separated by commas (e.g. 08:00, 20:00).",
+      "invalid_scan_interval": "Scan at least every 5 minutes and at most once a week."
     }
   },
   "selector": {
@@ -77,6 +91,18 @@
         "fri": "Friday",
         "sat": "Saturday",
         "sun": "Sunday"
+      }
+    },
+    "scan_mode": {
+      "options": {
+        "times": "At set times",
+        "interval": "Every …"
+      }
+    },
+    "scan_interval_unit": {
+      "options": {
+        "minutes": "Minutes",
+        "hours": "Hours"
       }
     }
   },

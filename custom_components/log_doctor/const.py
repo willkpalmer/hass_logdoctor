@@ -18,6 +18,14 @@ DEFAULT_MAX_INVESTIGATED = 15
 
 CONF_LOG_PATH = "log_path"
 CONF_SCAN_TIME = "scan_time"
+# Scheduled scans at set times (scan_time, one or more) or every so often
+# (see schedule.py).
+CONF_SCAN_MODE = "scan_mode"
+DEFAULT_SCAN_MODE = "times"
+CONF_SCAN_INTERVAL = "scan_interval"
+DEFAULT_SCAN_INTERVAL = 6
+CONF_SCAN_INTERVAL_UNIT = "scan_interval_unit"
+DEFAULT_SCAN_INTERVAL_UNIT = "hours"
 CONF_MOBILE_NOTIFY_SERVICE = "mobile_notify_service"
 CONF_LOOKBACK_HOURS = "lookback_hours"
 CONF_MIN_SEVERITY = "min_severity"

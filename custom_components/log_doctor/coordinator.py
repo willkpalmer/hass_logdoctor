@@ -99,6 +99,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         run_store: AutomationRunStore | None = None,
         stats: StatsStore | None = None,
         investigation_model: str = DEFAULT_INVESTIGATION_MODEL,
+        dated_empty_reports: bool = True,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
         self.hass = hass
@@ -119,6 +120,7 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.run_store = run_store
         self.stats = stats
         self.investigation_model = investigation_model
+        self.dated_empty_reports = dated_empty_reports
 
     async def _async_update_data(self) -> ScanResult:
         try:
@@ -221,8 +223,13 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
             previous_log_path=previous_path,
         )
         result.report_markdown = build_markdown_digest(result)
+        found = bool(result.reports or result.backup_reports or result.restart_reports)
         result.report_file = await async_write_report(
-            self.hass, result.report_markdown, now, self.report_retention_days
+            self.hass,
+            result.report_markdown,
+            now,
+            self.report_retention_days,
+            dated=found or self.dated_empty_reports,
         )
         if self.anomaly_store is not None:
             # Feeds the Log review view of the sidebar panel.

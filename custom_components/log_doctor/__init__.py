@@ -27,7 +27,7 @@ from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 
 from .const import (
     CONF_FLAP_COUNT,
@@ -68,6 +68,12 @@ from .const import (
     CONF_OPENAI_API_KEY,
     CONF_REPORT_RETENTION_DAYS,
     CONF_SCAN_TIME,
+    CONF_SCAN_INTERVAL,
+    CONF_SCAN_INTERVAL_UNIT,
+    CONF_SCAN_MODE,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL_UNIT,
+    DEFAULT_SCAN_MODE,
     DEFAULT_INCLUDE_SUPERVISOR_LOGS,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MAX_INVESTIGATED,
@@ -106,6 +112,7 @@ from .panel import async_register_panel, async_remove_panel
 from .paths import logdoctor_dir, migrate_legacy_folder_sync
 from .restart_history import RestartHistoryStore
 from .restarts import RestartTracker
+from .schedule import MODE_INTERVAL, parse_scan_times, scan_interval
 from .stats import StatsStore
 from .stopped_automations import StoppedAutomationWatch
 from .store import LogDoctorStore
@@ -113,11 +120,6 @@ from .store import LogDoctorStore
 _LOGGER = logging.getLogger(__name__)
 
 
-def _parse_scan_time(value: str) -> tuple[int, int, int]:
-    parts = [int(p) for p in value.split(":")]
-    while len(parts) < 3:
-        parts.append(0)
-    return parts[0], parts[1], parts[2]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -234,17 +236,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         restarts=restarts,
         run_store=run_store,
         stats=stats,
+        # Frequent scans only keep a dated report when they found something.
+        dated_empty_reports=options.get(CONF_SCAN_MODE, DEFAULT_SCAN_MODE) != MODE_INTERVAL,
         investigation_model=options.get(CONF_INVESTIGATION_MODEL) or DEFAULT_INVESTIGATION_MODEL,
     )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    scan_time = options.get(CONF_SCAN_TIME)
-    if scan_time:
-        hour, minute, second = _parse_scan_time(scan_time)
-    else:
-        hour, minute, second = DEFAULT_SCAN_HOUR, DEFAULT_SCAN_MINUTE, 0
 
     weekly_digest = options.get(CONF_WEEKLY_DIGEST, DEFAULT_WEEKLY_DIGEST)
     weekly_digest_day = options.get(CONF_WEEKLY_DIGEST_DAY, DEFAULT_WEEKLY_DIGEST_DAY)
@@ -259,10 +257,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except Exception:  # noqa: BLE001 - never let the digest break anything
                 _LOGGER.exception("Could not send the weekly digest")
 
-    unsub_time = async_track_time_change(
-        hass, _scheduled_scan, hour=hour, minute=minute, second=second
-    )
-    entry.async_on_unload(unsub_time)
+    # Scheduled scans: at set times of day, or every so often (schedule.py).
+    if options.get(CONF_SCAN_MODE, DEFAULT_SCAN_MODE) == MODE_INTERVAL:
+        try:
+            interval = scan_interval(
+                options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                options.get(CONF_SCAN_INTERVAL_UNIT, DEFAULT_SCAN_INTERVAL_UNIT),
+            )
+        except ValueError:
+            interval = timedelta(hours=DEFAULT_SCAN_INTERVAL)
+        entry.async_on_unload(async_track_time_interval(hass, _scheduled_scan, interval))
+    else:
+        try:
+            times = parse_scan_times(options.get(CONF_SCAN_TIME))
+        except ValueError:
+            times = parse_scan_times(f"{DEFAULT_SCAN_HOUR}:{DEFAULT_SCAN_MINUTE:02d}")
+        for at in times:
+            entry.async_on_unload(
+                async_track_time_change(
+                    hass, _scheduled_scan, hour=at.hour, minute=at.minute, second=at.second
+                )
+            )
 
     notify_device_id = options.get(CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE) or None
     if options.get(CONF_MONITOR_AUTOMATIONS, DEFAULT_MONITOR_AUTOMATIONS):

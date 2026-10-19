@@ -17,10 +17,23 @@ const WEEKDAY_NAMES = {
 const SETTINGS_SECTIONS = [
   {
     id: "scan",
-    title: "Daily scan",
+    title: "Scanning",
     description: "When the log is scanned and what counts as a problem.",
     fields: [
-      { key: "scan_time", label: "Daily scan time", type: "time" },
+      {
+        key: "scan_mode", label: "Scheduled scans", type: "select",
+        choices: [["times", "At set times"], ["interval", "Every …"]],
+      },
+      {
+        key: "scan_time", label: "Scan at", type: "text", showIf: ["scan_mode", "times"],
+        placeholder: "08:00, 20:00",
+        help: "One or more times, separated by commas, e.g. 08:00, 13:30, 20:00.",
+      },
+      {
+        key: "scan_interval", label: "Scan every", type: "number", min: 1, max: 1440, showIf: ["scan_mode", "interval"],
+        unitField: { key: "scan_interval_unit", choices: [["minutes", "minutes"], ["hours", "hours"]] },
+        help: "Counted from when WP Log Doctor starts; at least every 5 minutes. Scans that find nothing only update latest.md, rather than each leaving a report file.",
+      },
       { key: "min_severity", label: "Minimum severity to report", type: "select", options: "severity_levels" },
       { key: "lookback_hours", label: "Lookback window on the first scan", type: "number", min: 1, max: 168, unit: "hours" },
       { key: "log_path", label: "Log file path", type: "text" },
@@ -74,7 +87,7 @@ const SETTINGS_SECTIONS = [
       { key: "automation_failure_notify_device", label: "Also push automation failures, missed and stopped runs to", type: "device" },
       { key: "mobile_notify_service", label: "Mobile notify service for the daily scan summary and weekly digest", type: "text", datalist: "notify_services", help: "e.g. mobile_app_pixel_10. Leave blank for none." },
       { key: "weekly_digest", label: "Send a weekly digest", type: "bool", help: "The week's new problems, noisiest integrations, automations, devices, restarts and backups." },
-      { key: "weekly_digest_day", label: "Send it after the daily scan on", type: "select", options: "weekdays", names: WEEKDAY_NAMES },
+      { key: "weekly_digest_day", label: "Send it after the first scheduled scan on", type: "select", options: "weekdays", names: WEEKDAY_NAMES },
     ],
   },
   {
@@ -127,6 +140,7 @@ h2 { font-size: 16px; font-weight: 500; margin: 0; padding: 14px 16px 2px; }
 }
 .control input[type=number] { max-width: 120px; }
 .unit { color: var(--secondary-text-color, #727272); white-space: nowrap; }
+.field[hidden] { display: none; }
 .changed > label::after { content: " •"; color: var(--primary-color, #03a9f4); }
 input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary-color, #03a9f4); cursor: pointer; }
 button {
@@ -206,11 +220,17 @@ export class LogDoctorSettings extends HTMLElement {
 
   // -- values ---------------------------------------------------------
 
+  // Every setting, the units picked beside a number included.
+  _fields() {
+    return SETTINGS_SECTIONS.flatMap((s) => s.fields).flatMap((f) => (
+      f.unitField ? [f, { ...f.unitField, type: "select" }] : [f]));
+  }
+
   _normalize(key, value) {
-    const field = SETTINGS_SECTIONS.flatMap((s) => s.fields).find((f) => f.key === key);
+    const field = this._fields().find((f) => f.key === key);
     if (!field) return value;
     if (field.type === "number") return value === "" || value === null || value === undefined ? value : Number(value);
-    if (field.type === "time" && typeof value === "string" && value.length === 5) return `${value}:00`;
+    if (key === "scan_time" && typeof value === "string") return value.split(/[,;\s]+/).filter(Boolean).join(", ");
     if (field.type === "device") return value || null;
     if (field.type === "text") return value ?? "";
     return value;
@@ -218,7 +238,7 @@ export class LogDoctorSettings extends HTMLElement {
 
   _changes() {
     const changes = {};
-    for (const field of SETTINGS_SECTIONS.flatMap((s) => s.fields)) {
+    for (const field of this._fields()) {
       if (field.type === "apikey") continue;
       const before = this._normalize(field.key, this._data.options[field.key]);
       const after = this._normalize(field.key, this._values[field.key]);
@@ -337,7 +357,8 @@ export class LogDoctorSettings extends HTMLElement {
       input.checked = !!value;
     } else if (field.type === "select") {
       input = document.createElement("select");
-      for (const opt of d[field.options] || []) input.appendChild(new Option(field.names?.[opt] || opt, opt));
+      const choices = field.choices || (d[field.options] || []).map((opt) => [opt, field.names?.[opt] || opt]);
+      for (const [opt, text] of choices) input.appendChild(new Option(text, opt));
       input.value = value ?? "";
     } else if (field.type === "device") {
       input = document.createElement("select");
@@ -380,7 +401,19 @@ export class LogDoctorSettings extends HTMLElement {
     }
     input.id = id;
     input.dataset.key = field.key;
+    if (field.placeholder) input.placeholder = field.placeholder;
     control.prepend(input);
+    if (field.unitField) {
+      // e.g. Scan every [6] [hours ▾]
+      const unit = document.createElement("select");
+      unit.dataset.key = field.unitField.key;
+      unit.setAttribute("aria-label", "Unit");
+      unit.style.maxWidth = "140px";
+      for (const [opt, text] of field.unitField.choices) unit.appendChild(new Option(text, opt));
+      unit.value = this._values[field.unitField.key] ?? field.unitField.choices[0][0];
+      control.appendChild(unit);
+    }
+    if (field.showIf) [row.dataset.showIfKey, row.dataset.showIfValue] = field.showIf;
     if (field.unit) {
       const unit = document.createElement("span");
       unit.className = "unit";
@@ -491,6 +524,11 @@ export class LogDoctorSettings extends HTMLElement {
   }
 
   _refreshDirty() {
+    // Fields that only apply to one choice of another (e.g. Scan at only
+    // for scans at set times).
+    for (const row of this.shadowRoot.querySelectorAll(".field[data-show-if-key]")) {
+      row.hidden = String(this._values[row.dataset.showIfKey] ?? "") !== row.dataset.showIfValue;
+    }
     const changes = this._changes();
     for (const row of this.shadowRoot.querySelectorAll(".field[data-field]")) {
       const key = row.dataset.field;

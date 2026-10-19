@@ -27,15 +27,17 @@ def _write_report_sync(
     report_markdown: str,
     scanned_at: datetime,
     retention_days: int,
+    dated: bool = True,
 ) -> str:
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"log_doctor_report_{scanned_at.strftime('%Y-%m-%d_%H%M%S')}.md"
-    report_path = reports_dir / filename
-    report_path.write_text(report_markdown, encoding="utf-8")
-
     latest_path = reports_dir / LATEST_REPORT_FILENAME
     latest_path.write_text(report_markdown, encoding="utf-8")
+    report_path = latest_path
+    if dated:
+        filename = f"log_doctor_report_{scanned_at.strftime('%Y-%m-%d_%H%M%S')}.md"
+        report_path = reports_dir / filename
+        report_path.write_text(report_markdown, encoding="utf-8")
 
     if retention_days > 0:
         cutoff = datetime.now() - timedelta(days=retention_days)
@@ -58,12 +60,18 @@ async def async_write_report(
     report_markdown: str,
     scanned_at: datetime,
     retention_days: int,
+    dated: bool = True,
 ) -> str:
-    """Write the report to disk (via the executor) and return its path."""
+    """Write the report to disk (via the executor) and return its path.
+
+    Without dated, only latest.md is written (scans every few minutes that
+    found nothing don't each leave a file).
+    """
     return await hass.async_add_executor_job(
         _write_report_sync,
         reviews_dir(hass),
         report_markdown,
         scanned_at,
         retention_days,
+        dated,
     )

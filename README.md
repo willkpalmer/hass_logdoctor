@@ -18,7 +18,8 @@ report, never a change.
 
 ## What it does
 
-1. On a schedule you choose (default: daily at 08:00), it reads your
+1. On a schedule you choose - at one or more set times of day, or every
+   so many minutes or hours (default: daily at 08:00) - it reads your
    `home-assistant.log` file in full. Home Assistant starts a new log on
    every restart and keeps the old one as `home-assistant.log.1`; when
    that was written to after the last scan, the lines since then are read
@@ -128,7 +129,10 @@ not something wrong with this repository; a fix is up as
 2. Configure:
    - **Log file path** — defaults to your instance's
      `home-assistant.log`.
-   - **Daily scan time** — when the automatic daily scan runs.
+   - **Scheduled scans** — **At set times**: one or more times of day,
+     separated by commas (e.g. `08:00, 13:30, 20:00`); or **Every …**: a
+     number of minutes or hours (at least every 5 minutes, at most once a
+     week), counted from when Log Doctor starts.
    - **Minimum severity to report** — `WARNING`, `ERROR`, or `CRITICAL`.
    - **Lookback window** — how far back to look on the very first scan.
    - **Mobile notify service** — e.g. `mobile_app_pixel_10_pro_xl`, to also
@@ -767,8 +771,11 @@ Every setting from the integration's **Configure** dialog, plus what its
 entities do, on one page (`/log-doctor#settings`), in sections - each with
 a line saying what it covers, and links to each at the top:
 
-- **Daily scan** - scan time, minimum severity, first-scan lookback, log
-  file path, Supervisor/Host/add-on logs.
+- **Scanning** - when scheduled scans run - **At set times** (one or more,
+  separated by commas, e.g. `08:00, 20:00`) or **Every …** so many minutes
+  or hours; only the fields for the choice made are shown - minimum
+  severity, first-scan lookback, log file path, Supervisor/Host/add-on
+  logs.
 - **Startup & shutdown** - the startup grace period (how long after
   starting messages still count as startup messages, for
   [Startup & shutdown](#startup--shutdown)) and how many restarts stay
@@ -935,7 +942,9 @@ notification is dismissed or gets overwritten by tomorrow's scan: open the
 folder with the Studio Code Server / File editor add-on, Samba, or SSH to
 see the full history, including every "nothing found" run and exactly what
 was checked. Files older than the configured retention window (default 30
-days) are pruned automatically; `latest.md` is never pruned. This is also
+days) are pruned automatically; `latest.md` is never pruned. When scans
+run **every** so many minutes or hours, a scan that finds nothing only
+updates `latest.md` rather than each leaving a file of its own. This is also
 the file the [investigation stage](#investigation-stage) and the
 [companion app](#companion-app) both read.
 
