@@ -65,3 +65,44 @@ async def test_phase_of(hass, tmp_path):
     assert tracker.phase_of(NOW - timedelta(minutes=9)) == (SHUTDOWN, first.id)
     assert tracker.phase_of(NOW - timedelta(minutes=4)) == (STARTUP, second.id)
     assert tracker.phase_of(NOW) is None
+
+
+def test_journal_lines_with_an_offset():
+    from datetime import timezone as tz
+
+    text = (
+        "2026-10-21 23:00:45.728+01:00 homeassistant.camelot app_esphome[690]: [23:00:45] ERROR: Unable to access the API\n"
+        "2026-10-26 21:36:01.945+00:00 homeassistant.camelot app_esphome[708]: 2026-10-26 21:36:01.939 WARNING (MainThread) [zeroconf] Error with socket 16"
+    )
+    entries = parse_supervisor_log_text(text, "ESPHome Device Builder", fallback_timestamp=NOW)
+    assert [e.timed for e in entries] == [True, True]
+    # The offset is honoured: 23:00:45+01:00 is 22:00:45 UTC.
+    expected = datetime(2026, 10, 21, 22, 0, 45, 728000, tzinfo=tz.utc).astimezone().replace(tzinfo=None)
+    assert entries[0].timestamp == expected
+    assert entries[0].message == "[23:00:45] ERROR: Unable to access the API"
+    assert entries[1].logger == "ESPHome Device Builder:zeroconf"
+    assert entries[1].message == "Error with socket 16"
+
+
+async def test_records_from_unrecognized_journal_lines_are_regrouped(hass):
+    from custom_components.log_doctor.anomaly_store import AnomalyStore
+    from custom_components.log_doctor.log_parser import make_signature
+
+    line = "2026-10-26 21:36:01.945+00:00 homeassistant.camelot app_esphome[708]: 2026-10-26 21:36:01.939 WARNING (MainThread) [zeroconf] Error with socket 16"
+    new_id = make_signature("ESPHome Device Builder:zeroconf", "Error with socket 16")
+    store = AnomalyStore(hass)
+    await store._store.async_save({"anomalies": [
+        # As stored before 0.45.0: the whole line as the message.
+        {"id": "old1", "level": "WARNING", "logger": "ESPHome Device Builder", "message": line,
+         "count": 2, "scans": 1, "first_seen": "2026-10-26T00:00:00+00:00", "samples": [line], "last_logged": None},
+        # A scan since already made the right one.
+        {"id": new_id, "level": "WARNING", "logger": "ESPHome Device Builder:zeroconf", "message": "Error with socket 16",
+         "count": 3, "scans": 2, "first_seen": "2026-10-27T00:00:00+00:00", "samples": [], "last_logged": None},
+    ]})
+    await store.async_load()
+    assert [r["id"] for r in store.records] == [new_id]
+    record = store.records[0]
+    assert (record["count"], record["scans"]) == (5, 3)
+    assert record["first_seen"] == "2026-10-26T00:00:00+00:00"
+    assert record["last_logged"].startswith("2026-10-26T21:36:01")
+    await store.async_shutdown()

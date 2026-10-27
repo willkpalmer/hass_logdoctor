@@ -62,7 +62,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from homeassistant.util import dt as dt_util
 
 from .const import SEVERITY_ORDER
-from .log_parser import line_timestamp
+from .log_parser import journal_prefixed, line_timestamp, make_signature, parse_supervisor_log_text
 from .setup_failures import setup_failure_domain
 from .review_list import ReviewList
 
@@ -107,9 +107,50 @@ class AnomalyStore(ReviewList):
             if domain and record.get("category") == CATEGORY_RESTART and not record.get("category_manual"):
                 record["category"] = CATEGORY_OPERATIONAL
             filled = True
+        # Before 0.45.0, Supervisor journal lines whose time carried an
+        # offset weren't recognized: stored with the time in the message,
+        # under the source's name, with no last_logged.
+        if self._regroup_journal_records():
+            filled = True
         if filled:
             self.async_changed()
         return data
+
+    def _regroup_journal_records(self) -> bool:
+        """Re-read records stored from unrecognized journal lines.
+
+        Each is parsed again from its newest kept line and given the
+        signature a scan gives it now - merged into the record that
+        already has it, if a scan since has made one.
+        """
+        changed = False
+        for record in list(self._records):
+            if not journal_prefixed(record.get("message") or ""):
+                continue
+            samples = record.get("samples") or []
+            source = record.get("logger") or ""
+            entries = parse_supervisor_log_text(
+                samples[-1] if samples else record["message"], source, fallback_timestamp=datetime.now()
+            )
+            if not entries:
+                continue
+            entry = entries[0]
+            first_line = entry.message.split("\n", 1)[0]
+            signature = make_signature(entry.logger, first_line)
+            times = [t for raw in samples if (t := line_timestamp(raw))]
+            logged = self._to_utc(max(times), max(times)) if times else None
+            target = next((r for r in self._records if r["id"] == signature and r is not record), None)
+            if target is None:
+                record.update(id=signature, logger=entry.logger, message=first_line, last_logged=logged)
+            else:
+                # A scan since has the same anomaly under its new signature.
+                target["count"] = target.get("count", 0) + record.get("count", 0)
+                target["scans"] = target.get("scans", 0) + record.get("scans", 0)
+                target["first_seen"] = min(target.get("first_seen") or "~", record.get("first_seen") or "~")
+                target["last_logged"] = max(target.get("last_logged") or "", logged or "") or None
+                self._records.remove(record)
+            changed = True
+        return changed
 
     @staticmethod
     def sort_key(record: dict[str, Any]) -> str:

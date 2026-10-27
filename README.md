@@ -895,7 +895,8 @@ A couple of things are different for these sources compared to
   that is just 100), not a full history, so there's no separate "lookback
   window" for them - Log Doctor just checks the current tail every scan.
   Log Doctor asks for every source's lines with the time each was logged
-  (the Supervisor's `verbose` format, in UTC), converts that to your local
+  (the Supervisor's `verbose` format - in UTC from older Supervisors, with
+  its offset such as `+01:00` from newer ones), converts that to your local
   time and, like `home-assistant.log`, only counts lines logged since the
   last scan, so a line still in the tail isn't counted again on every scan
   (and restart messages among them land on

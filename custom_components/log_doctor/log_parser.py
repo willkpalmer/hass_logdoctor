@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .const import SEVERITY_ORDER
 
@@ -24,10 +24,13 @@ _TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 # The Supervisor's journal lines (Host, and add-ons when it adds it) start
-# with the time in UTC, without an offset, then host and process:
+# with the time, then host and process - in UTC without an offset from older
+# Supervisors, with its offset from newer ones:
 # 2026-09-27 21:47:56.772 homeassistant containerd[652]: <message>
+# 2026-10-21 23:00:45.728+01:00 homeassistant app_esphome[690]: <message>
 _JOURNAL_PREFIX_RE = re.compile(
-    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) \S+ [^\s:]+: "
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?)"
+    r"(?P<tz>Z|[+-]\d{2}:?\d{2})? \S+ [^\s:]+: "
 )
 
 # A level stated by the line itself wins over any keyword in it:
@@ -61,23 +64,37 @@ _LEVEL_KEYWORD_RE = re.compile(
 _LEVEL_ALIASES = {"WARN": "WARNING", "FATAL": "CRITICAL"}
 
 
+def journal_prefixed(text: str) -> bool:
+    """Whether text starts with a Supervisor journal line's time, host and process."""
+    return bool(_JOURNAL_PREFIX_RE.match(text))
+
+
 def _journal_timestamp(line: str) -> tuple[datetime | None, str]:
     """(local time, the message after the prefix) for a journal line.
 
-    The journal's time is UTC; converted to local time, naive, like Home
-    Assistant's own log. (None, line) if it has no journal prefix.
+    The journal's time is UTC unless it carries an offset; converted to
+    local time, naive, like Home Assistant's own log. (None, line) if it has
+    no journal prefix.
     """
     match = _JOURNAL_PREFIX_RE.match(line)
     if not match:
         return None, line
+    stamp = match.group("ts").replace("T", " ")
     try:
-        utc = datetime.strptime(match.group("ts")[:23], "%Y-%m-%d %H:%M:%S.%f")
+        when = datetime.strptime(stamp[:26], "%Y-%m-%d %H:%M:%S.%f")
     except ValueError:
         try:
-            utc = datetime.strptime(match.group("ts"), "%Y-%m-%d %H:%M:%S")
+            when = datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")
         except ValueError:
             return None, line
-    local = utc.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    zone = match.group("tz")
+    if zone and zone != "Z":
+        sign = 1 if zone[0] == "+" else -1
+        digits = zone[1:].replace(":", "")
+        offset = timezone(sign * timedelta(hours=int(digits[:2]), minutes=int(digits[2:])))
+    else:
+        offset = timezone.utc
+    local = when.replace(tzinfo=offset).astimezone().replace(tzinfo=None)
     return local, line[match.end():]
 
 

@@ -1392,15 +1392,19 @@ export class LogDoctorPanel extends HTMLElement {
   }
 
   // The Supervisor's journal lines (Host, add-ons, plugins) start with the
-  // time in UTC, without saying so: "2026-09-29 02:35:25.250 host proc[1]: ".
-  // Shown in local time like every other time here. Home Assistant's own
-  // "time LEVEL (thread)" lines are already local and left alone.
+  // time - in UTC without saying so from older Supervisors
+  // ("2026-09-29 02:35:25.250 host proc[1]: "), with its offset from newer
+  // ones ("2026-10-21 23:00:45.728+01:00 host proc[1]: "). Shown in local
+  // time like every other time here. Home Assistant's own "time LEVEL
+  // (thread)" lines are already local and left alone.
   _localJournalTime(line) {
-    const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?( \S+ [^\s:]+: )/.exec(line);
+    const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?( \S+ [^\s:]+: )/.exec(line);
     if (!match) return line;
-    const iso = `${match[1]}T${match[2]}${match[3] || ""}Z`;
+    let zone = match[4] || "Z";
+    if (zone !== "Z" && !zone.includes(":")) zone = `${zone.slice(0, 3)}:${zone.slice(3)}`;
+    const iso = `${match[1]}T${match[2]}${(match[3] || "").slice(0, 4)}${zone}`;
     if (Number.isNaN(new Date(iso).getTime())) return line;
-    return `${this._dateTime(iso)}${match[3] || ""}${match[4]}${line.slice(match[0].length)}`;
+    return `${this._dateTime(iso)}${match[3] || ""}${match[5]}${line.slice(match[0].length)}`;
   }
 
   _td(text, cls) {
