@@ -297,7 +297,7 @@ when it hasn't run for much longer than it ever has before:
   between runs, one and a half times the longest gap on record, and an
   hour. So an automation that runs irregularly - on motion or presence -
   isn't reported for a quiet spell like ones it's had before.
-- Automations that are turned off, not monitored on the Runs list, or gone
+- Automations that are turned off, not monitored on the History list, or gone
   aren't checked.
 
 Each one is reported once per quiet spell: as an entry on
@@ -350,7 +350,7 @@ says what the current tab holds:
   **Since ignored**, with its latest log lines under ▸. Ignored entries
   never come back by themselves and aren't pruned; **Stop ignoring**
   moves them back to the open list. (Also on Startup & shutdown.)
-- **Not monitored** tab (Devices & integrations, and Automations → Runs):
+- **Not monitored** tab (Devices & integrations, and Automations → History):
   devices and automations you've told Log Doctor to stop watching with
   **Stop monitoring**; **Monitor again** brings them back.
 - **Undo**: after Archive, Restore, Ignore, Stop ignoring or a move
