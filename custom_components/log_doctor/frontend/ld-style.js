@@ -214,6 +214,7 @@ a:hover { text-decoration: underline; }
 .chip.failed, .chip.error { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning, .chip.stopped, .chip.slow { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.chip.scene { background: rgba(156, 39, 176, 0.14); color: #9c27b0; }
 .chip.integration_off { background: rgba(127, 127, 127, 0.15); color: var(--secondary-text-color, #727272); }
 .chip.setup { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.flapping { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
@@ -303,7 +304,7 @@ export const TEMPLATE = `
   <div class="card" data-el="list-card">
     <div class="sections" data-el="sections" hidden>
       <button class="section" data-view="failures">Failures<span class="count" data-section-count="failures"></span></button>
-      <button class="section" data-view="runs">Runs</button>
+      <button class="section" data-view="runs">History</button>
     </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="open">Open</button>
@@ -317,8 +318,8 @@ export const TEMPLATE = `
       <select data-el="kind" title="Show" aria-label="Show"></select>
       <select data-el="automation" data-only-view="runs" title="Only this automation's runs" aria-label="Automation"></select>
       <button class="run-filter" data-action="clear-run" data-el="run-filter" hidden title="Show every restart's messages again"></button>
-      <select data-el="hours" data-only-view="runs" data-show="open" title="Show runs from" aria-label="Show runs from">
-        <option value="0">All recorded runs</option>
+      <select data-el="hours" data-only-view="runs" data-show="open" title="Show what happened in" aria-label="Show what happened in">
+        <option value="0">Everything recorded</option>
         <option value="1">Last hour</option>
         <option value="6">Last 6 hours</option>
         <option value="12">Last 12 hours</option>

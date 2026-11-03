@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 from types import SimpleNamespace
 
+from homeassistant.core import Context
 from homeassistant.util import dt as dt_util
 
 from custom_components.log_doctor.anomaly_store import AnomalyStore
@@ -49,6 +50,7 @@ def _event(entity_id: str, source: str | None = "state of sensor.x"):
     return SimpleNamespace(
         data={"entity_id": entity_id, "name": entity_id, "source": source},
         time_fired=dt_util.utcnow(),
+        context=Context(),
     )
 
 

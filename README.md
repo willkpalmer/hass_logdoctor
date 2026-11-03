@@ -289,7 +289,7 @@ sensor that no longer updates, a webhook nothing calls any more - doesn't
 fail: it just never runs again, and nothing says so. With **Tell me when
 an automation that usually runs regularly stops running** on (the
 default), Log Doctor looks at the runs it records for the
-[Runs](#runs) list every 30 minutes and reports an automation as stopped
+[History](#history) list every 30 minutes and reports an automation as stopped
 when it hasn't run for much longer than it ever has before:
 
 - It needs at least 8 recorded runs, so there's a pattern to go by.
@@ -466,7 +466,8 @@ investigation stage gets to them last).
 ### Automations
 
 One page, `/log-doctor#failures`, with two sections - switch between
-them at the top: **Failures** and **Runs**.
+them at the top: **Failures** and **History** (automation runs and scene
+activations).
 
 #### Failures
 
@@ -480,44 +481,61 @@ scripts only. A script
 that fails when called from an automation appears twice - once for each,
 since both runs failed.
 
-#### Runs
+#### History
 
-Every automation run, recorded as it happens (`/log-doctor#runs`), newest
-first: **Ran** (when its actions started - runs stopped by their
-conditions aren't included), **Automation** (links to its traces) and
-**Trigger** - which of the automation's triggers started it: its name, if
-you've renamed it in the automation editor, or otherwise a short
-description of it such as "Sunset +00:15:00", "At 07:30", "Time pattern:
-every 15 minutes" or "Front door → on for 00:02:00" - with Home Assistant's
-own, more general description ("sun event sunset") under it - or
-**Manual** when it was run by hand (the Run button or the
-`automation.trigger` action). Which trigger it was comes from the run's
-trace; for an automation that keeps no traces (`stored_traces: 0`) it's
-only known when the automation has one trigger of that kind, and
-otherwise, like for runs recorded before 0.41.0, just Home Assistant's
-description is shown.
-Filter by automation or trigger in the filter box, to one automation with
-the automation drop-down, to triggered or manual runs only, and by time:
-**Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24 hours** (or
-all recorded runs).
+Every automation run and every scene activation, in the order they
+happened, as they happen (`/log-doctor#runs`), newest first:
 
-Runs are grouped by day, newest first - **Today**, **Yesterday**, then the
-weekday and date - with each run's time. Click a day's heading to collapse
-it, or **Collapse all**; its checkbox selects all of that day's runs.
+- **When** - when an automation's actions started (runs stopped by their
+  conditions aren't included) or a scene was activated.
+- **Automation / scene** - links to the automation's traces, or the
+  scene's editor; scenes are marked **Scene**.
+- **Triggered / activated by** - for an automation, which of its triggers
+  started it: its name, if you've renamed it in the automation editor, or
+  otherwise a short description of it such as "Sunset +00:15:00", "At
+  07:30", "Time pattern: every 15 minutes" or "Front door → on for
+  00:02:00" - with Home Assistant's own, more general description ("sun
+  event sunset") under it - or **Manual** when it was run by hand (the Run
+  button or the `automation.trigger` action). Under that, **by** whom or
+  what, when it can be told: the person who pressed Run, or whose action
+  caused the trigger (turning on a light that triggers it, say), or the
+  automation or script that started it. For a scene, who or what
+  activated it: **By Will** (a person, in the app or a dashboard), **By
+  automation Dusk** or **By script Bedtime** (linking to its traces), or
+  "—" when it can't be told (a device, an integration, or Home Assistant
+  itself). Which trigger it was comes from the run's trace; for an
+  automation that keeps no traces (`stored_traces: 0`) it's only known
+  when the automation has one trigger of that kind.
 
-Runs are kept for the same time as reports and list entries (Settings,
+Who or what started something is worked out from Home Assistant's
+"context", which every action carries: who started it, and what it came
+from, followed back through automations and scripts.
+
+Filter by name, trigger or who in the filter box; to one automation or
+scene with the drop-down next to it; to automation runs, scene
+activations, triggered or manual runs, or what a person started; and by
+time: **Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24
+hours** (or everything recorded).
+
+Entries are grouped by day, newest first - **Today**, **Yesterday**, then
+the weekday and date - with each one's time. Click a day's heading to
+collapse it, or **Collapse all**; its checkbox selects all of that day's
+entries.
+
+Entries are kept for the same time as reports and list entries (Settings,
 default 30 days), up to 10,000; older ones are removed with each scan.
 
-**Stop monitoring** removes the selected runs' automations from the
-list - their runs are deleted and no more are recorded (nor checked for
+**Stop monitoring** removes the selected entries' automations or scenes
+from the list - what was recorded for them is deleted and no more is
+recorded (nor are automations checked for
 [stopping](#stopped-automation-alerts)) - and lists them on the **Not
-monitored** tab with their last run and when that started. **Monitor
-again** starts recording their runs again. Runs aren't archived, so this
+monitored** tab with their last entry and when that started. **Monitor
+again** starts recording them again. Nothing here is archived, so this
 section has no Archived tab.
 
-Only what's changed is sent to the page as automations run (new runs, and
-the oldest dropped to make room), not the whole list each time, so the page
-stays quick on a busy system.
+Only what's changed is sent to the page as things happen (new entries,
+and the oldest dropped to make room), not the whole list each time, so the
+page stays quick on a busy system.
 
 ### Devices & integrations
 

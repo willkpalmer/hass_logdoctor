@@ -301,9 +301,9 @@ export class LogDoctorPanel extends HTMLElement {
     if (!view?.automationFilter) return;
     const st = this._st();
     const names = new Map();
-    for (const r of st.records) if (r.kind === "run" && !names.has(r.entity_id)) names.set(r.entity_id, r.name);
+    for (const r of st.records) if ((r.kind === "run" || r.kind === "scene") && !names.has(r.entity_id)) names.set(r.entity_id, r.name);
     if (st.automation && !names.has(st.automation)) names.set(st.automation, st.automation);
-    const options = [["", "All automations"], ...[...names].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))];
+    const options = [["", "All automations and scenes"], ...[...names].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))];
     const key = options.map((o) => o[0]).join("|");
     if (select.dataset.key !== key) {
       select.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
@@ -1172,21 +1172,28 @@ export class LogDoctorPanel extends HTMLElement {
     return `${weekday} · ${day}`;
   }
 
+  // Automations: History rows - when, which automation or scene, and what
+  // started it: the trigger (or Manual) and who, for a run; who or what
+  // activated it, for a scene.
   _runCells(tr, r) {
-    // The day is the group's heading, so runs show the time; the Excluded
-    // tab's "last run" keeps its date.
+    // The day is the group's heading, so entries show the time; the Not
+    // monitored tab's "last" keeps its date.
     const tdWhen = this._td("", "when");
-    tdWhen.append(this._label(r.kind === "excluded" ? "Last run " : "Ran "),
+    tdWhen.append(this._label(r.kind === "excluded" ? "Last " : "At "),
       r.kind === "excluded" ? this._dateTime(r.when) : this._time(r.when));
     tdWhen.title = this._dateTime(r.when);
     tr.appendChild(tdWhen);
 
+    const scene = r.kind === "scene" || (r.entity_id || "").startsWith("scene.");
     const tdName = document.createElement("td");
+    if (scene) tdName.appendChild(this._chip("scene", "Scene"));
     if (r.config_id) {
       const a = document.createElement("a");
-      a.href = `/config/automation/trace/${encodeURIComponent(r.config_id)}`;
+      a.href = scene
+        ? `/config/scene/edit/${encodeURIComponent(r.config_id)}`
+        : `/config/automation/trace/${encodeURIComponent(r.config_id)}`;
       a.dataset.nav = "1";
-      a.title = "Open this automation's traces";
+      a.title = scene ? "Open this scene" : "Open this automation's traces";
       a.textContent = r.name;
       tdName.appendChild(a);
     } else {
@@ -1199,26 +1206,63 @@ export class LogDoctorPanel extends HTMLElement {
     tr.appendChild(tdName);
 
     const tdTrigger = this._td("", "text");
-    tdTrigger.append(this._label("Trigger "));
+    tdTrigger.append(this._label(scene ? "Activated " : "Trigger "));
     if (r.kind === "excluded") {
       tdTrigger.append("—");
-    } else if (r.manual) {
-      const chip = this._chip("script", "Manual");
-      chip.title = "Run by hand: the Run button or the automation.trigger action";
-      tdTrigger.appendChild(chip);
+    } else if (r.kind === "scene") {
+      if (r.by) tdTrigger.append(this._byElement(r, true));
+      else {
+        tdTrigger.append("—");
+        tdTrigger.title = "Not known: a device, an integration or Home Assistant itself, or an action without a user (e.g. from the API)";
+      }
     } else {
-      // Which of its triggers (its name or a description of it), with Home
-      // Assistant's own description under it when that says something else.
-      tdTrigger.append(r.trigger_name || r.trigger || "");
-      if (r.trigger_name && r.trigger && r.trigger_name.toLowerCase() !== r.trigger.toLowerCase()) {
-        const sub = document.createElement("div");
-        sub.className = "sub";
-        sub.textContent = r.trigger;
-        sub.title = "Home Assistant's description of what triggered it";
-        tdTrigger.appendChild(sub);
+      if (r.manual) {
+        const chip = this._chip("script", "Manual");
+        chip.title = "Run by hand: the Run button or the automation.trigger action";
+        tdTrigger.appendChild(chip);
+      } else {
+        // Which of its triggers (its name or a description of it), with Home
+        // Assistant's own description under it when that says something else.
+        tdTrigger.append(r.trigger_name || r.trigger || "");
+        if (r.trigger_name && r.trigger && r.trigger_name.toLowerCase() !== r.trigger.toLowerCase()) {
+          const sub = document.createElement("div");
+          sub.className = "sub";
+          sub.textContent = r.trigger;
+          sub.title = "Home Assistant's description of what triggered it";
+          tdTrigger.appendChild(sub);
+        }
+      }
+      if (r.by) {
+        const by = document.createElement("div");
+        by.className = "sub";
+        by.append(this._byElement(r, false));
+        tdTrigger.appendChild(by);
       }
     }
     tr.appendChild(tdTrigger);
+  }
+
+  // "by Will", or "by automation <link to its traces>".
+  _byElement(r, capital) {
+    const span = document.createElement("span");
+    const word = capital ? "By" : "by";
+    if (r.by_kind === "user") {
+      span.append(`${word} `, r.by);
+      span.title = "A person, in the app or a dashboard";
+      return span;
+    }
+    span.append(`${word} ${r.by_kind} `);
+    if (r.by_config_id && (r.by_kind === "automation" || r.by_kind === "script")) {
+      const a = document.createElement("a");
+      a.href = `/config/${r.by_kind}/trace/${encodeURIComponent(r.by_config_id)}`;
+      a.dataset.nav = "1";
+      a.title = `Open this ${r.by_kind}'s traces`;
+      a.textContent = r.by;
+      span.appendChild(a);
+    } else {
+      span.append(r.by);
+    }
+    return span;
   }
 
   _failureCells(tr, r) {

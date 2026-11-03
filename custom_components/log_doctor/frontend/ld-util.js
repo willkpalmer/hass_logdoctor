@@ -103,7 +103,16 @@ export function duration(fromIso, toIso) {
 // What started an automation run: which of its triggers (its name, see
 // trigger_names.py), Home Assistant's description of it, or Manual.
 export function runTrigger(r) {
-  return r.manual ? "Manual" : r.trigger_name || r.trigger || "";
+  if (r.kind === "scene") return r.by ? `${byLabel(r)}` : "";
+  const how = r.manual ? "Manual" : r.trigger_name || r.trigger || "";
+  return r.by ? `${how} (${byLabel(r)})` : how;
+}
+
+// Who or what started an automation run or activated a scene (see
+// activity_context.py): "by Will", "by automation Evening lights".
+export function byLabel(r) {
+  if (!r.by) return "";
+  return r.by_kind === "user" ? `by ${r.by}` : `by ${r.by_kind} ${r.by}`;
 }
 
 

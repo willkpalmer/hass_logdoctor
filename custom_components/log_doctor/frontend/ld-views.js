@@ -195,13 +195,24 @@ export const VIEWS = {
     exportHeader: ["Date", "Time", "Automation / script", "Entity", "Reason"],
     exportRow: (r, p) => [p._date(r.when), p._time(r.when), r.name, r.entity_id, r.reason],
   },
+  // Automation runs and scene activations, in the order they happened.
   runs: {
     list: "automation_runs",
-    noun: ["run", "runs"],
-    filterPlaceholder: "Filter by automation or trigger",
-    kinds: [["", "Everything"], ["triggered", "Triggered"], ["manual", "Manual"]],
-    kindOf: (r) => (r.manual ? "manual" : "triggered"),
-    search: (r) => `${r.name} ${r.entity_id} ${r.manual ? "Manual" : `${r.trigger_name || ""} ${r.trigger || ""}`}`,
+    noun: ["entry", "entries"],
+    filterPlaceholder: "Filter by automation, scene, trigger or who",
+    kinds: [
+      ["", "Everything"], ["automations", "Automation runs"], ["scenes", "Scene activations"],
+      ["triggered", "Triggered runs"], ["manual", "Manual runs"], ["user", "Started by a person"],
+    ],
+    kindOf: (r) => (r.kind === "scene" ? "scene" : r.manual ? "manual" : "triggered"),
+    matches: (r, kind) => ({
+      automations: r.kind !== "scene",
+      scenes: r.kind === "scene",
+      triggered: r.kind === "run" && !r.manual,
+      manual: r.kind === "run" && r.manual,
+      user: r.by_kind === "user",
+    })[kind],
+    search: (r) => `${r.name} ${r.entity_id} ${r.kind === "scene" ? "scene" : r.manual ? "Manual" : `${r.trigger_name || ""} ${r.trigger || ""}`} ${r.by || ""} ${r.by_kind || ""}`,
     defaultSort: { key: "when", dir: -1 },
     // Grouped by day (in Home Assistant's time zone), newest first, each
     // collapsible; the day is worked out once per update (see _onMessage).
@@ -213,13 +224,13 @@ export const VIEWS = {
     // The Last 1 / 6 / 12 / 24 hours drop-down (runs, not the Not monitored tab).
     timeWindow: true,
     empty: {
-      open: "No automation runs recorded yet. Every automation run appears here as it happens.",
-      unmonitored: "Every automation is monitored. Automations you stop monitoring appear here; their runs aren't recorded until you monitor them again.",
+      open: "Nothing recorded yet. Every automation run and scene activation appears here as it happens.",
+      unmonitored: "Every automation and scene is monitored. Ones you stop monitoring appear here; they aren't recorded until you monitor them again.",
     },
     columns: [
-      { key: "when", label: "Ran", firstDir: -1 },
-      { key: "name", label: "Automation" },
-      { key: "trigger", label: "Trigger" },
+      { key: "when", label: "When", firstDir: -1 },
+      { key: "name", label: "Automation / scene" },
+      { key: "trigger", label: "Triggered / activated by" },
     ],
     compare: {
       when: (a, b) => (a.when || "").localeCompare(b.when || ""),
@@ -232,22 +243,27 @@ export const VIEWS = {
     archivable: false,
     // Not monitoring an automation, like a device: its runs aren't recorded.
     unmonitorable: true,
-    unmonitorKinds: ["run"],
+    unmonitorKinds: ["run", "scene"],
     unmonitorTitles: [
-      "Remove these automations' runs and stop recording them; they're listed on the Not monitored tab",
-      "Record these automations' runs again",
+      "Remove these automations' runs (or scenes' activations) and stop recording them; they're listed on the Not monitored tab",
+      "Record them again",
     ],
-    tabNames: { open: "Runs" },
+    tabNames: { open: "History" },
     // The automation drop-down.
     automationFilter: true,
     navCount: false,
-    where: "the automation runs",
+    where: "the history",
     hints: {
-      open: "Every automation run as it happens, and what triggered it. Automations stopped by their conditions aren't runs.",
-      unmonitored: "Automations whose runs aren't recorded. Their runs already recorded were removed.",
+      open: "Every automation run and scene activation, as they happen: which trigger started each automation (or who ran it), and who or what activated each scene. Automations stopped by their conditions don't run, so aren't listed.",
+      unmonitored: "Automations and scenes that aren't recorded. What was already recorded for them was removed.",
     },
-    exportHeader: ["Ran", "Automation", "Entity", "Trigger", "Home Assistant's description"],
-    exportRow: (r, p) => [p._dateTime(r.when), r.name, r.entity_id, runTrigger(r), r.manual ? "" : r.trigger || ""],
+    exportHeader: ["When", "Type", "Automation / scene", "Entity", "Trigger", "Started by", "Home Assistant's description"],
+    exportRow: (r, p) => [
+      p._dateTime(r.when), r.kind === "scene" ? "Scene" : "Automation", r.name, r.entity_id,
+      r.kind === "scene" ? "" : r.manual ? "Manual" : r.trigger_name || r.trigger || "",
+      r.by ? `${r.by_kind === "user" ? "" : `${r.by_kind} `}${r.by}` : "",
+      r.kind === "scene" || r.manual ? "" : r.trigger || "",
+    ],
   },
   health: {
     list: "health",
