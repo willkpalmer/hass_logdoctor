@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    RUNNING_VERSION,
     CONF_OPENAI_API_KEY,
     DATA_ANOMALY_STORE,
     DATA_BACKUP_STORE,
@@ -79,6 +80,13 @@ async def async_get_config_entry_diagnostics(
             if (review_list := hass.data.get(key)) is not None
         },
     }
+    if (runs := hass.data.get(DATA_RUN_STORE)) is not None:
+        # Automations: History - whether scene activations are reaching it.
+        result["history"] = {
+            "listening": runs.contexts is not None,
+            "scene_state_changes": dict(runs.scene_events),
+        }
+    result["version"] = {"running": RUNNING_VERSION}
     if coordinator is not None:
         data = coordinator.store.data
         result["scan"] = {

@@ -1,6 +1,29 @@
 """Constants for the Log Doctor integration."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+_MANIFEST = Path(__file__).parent / "manifest.json"
+
+
+def installed_version() -> str:
+    """The version in manifest.json now (blocking: read in the executor).
+
+    HACS replaces the files when it updates Log Doctor, but Home Assistant
+    keeps running the code it loaded until it restarts: compared with
+    RUNNING_VERSION, this tells whether a restart is still needed.
+    """
+    try:
+        return json.loads(_MANIFEST.read_text(encoding="utf-8")).get("version", "")
+    except (OSError, ValueError):
+        return ""
+
+
+# The version of the code running, read once when it's imported (Home
+# Assistant imports integrations outside the event loop).
+RUNNING_VERSION = installed_version()
+
 DOMAIN = "log_doctor"
 PLATFORMS = ["sensor", "button", "switch"]
 

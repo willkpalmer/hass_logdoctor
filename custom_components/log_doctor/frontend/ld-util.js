@@ -186,3 +186,17 @@ export function upgradeProperties(element, names) {
     }
   }
 }
+
+// Opens one of Home Assistant's own pages, as its own links do. Home
+// Assistant keeps its config pages (automation traces, entities, ...) once
+// opened and only re-attaches them after the location-changed event, so on
+// a second visit a page could miss the new address and keep showing the
+// one it had (an empty trace list, or the last automation's): it's told
+// again once it's attached, and ignores that if it's already up to date.
+export function navigate(href, state = null) {
+  history.pushState(state, "", href);
+  window.dispatchEvent(new CustomEvent("location-changed"));
+  for (const delay of [100, 500]) {
+    setTimeout(() => window.dispatchEvent(new CustomEvent("location-changed")), delay);
+  }
+}

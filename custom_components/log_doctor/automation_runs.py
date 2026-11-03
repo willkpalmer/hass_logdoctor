@@ -94,6 +94,9 @@ class AutomationRunStore(ReviewList):
         self._full = False
         # Who or what started things (set by async_record_runs).
         self.contexts: ContextTracker | None = None
+        # Scene state changes seen since Home Assistant started, and what
+        # became of them (for diagnostics.py).
+        self.scene_events: dict[str, int] = {}
 
     @staticmethod
     def sort_key(record: dict[str, Any]) -> str:
@@ -131,11 +134,15 @@ class AutomationRunStore(ReviewList):
         new = event.data.get("new_state")
         old = event.data.get("old_state")
         entity_id = event.data.get("entity_id") or ""
+        self._count("seen")
         if not entity_id.startswith("scene.") or new is None or old is None:
+            self._count("added or removed")
             return  # added or removed, not activated
         if new.state in ("unavailable", "unknown") or new.state == old.state:
+            self._count("not activated")
             return
         if entity_id in self._excluded():
+            self._count("not monitored")
             return
         record = {
             "id": uuid.uuid4().hex,
@@ -151,6 +158,10 @@ class AutomationRunStore(ReviewList):
         }
         record.update(self._by(new.context))
         self._add(record)
+        self._count("recorded")
+
+    def _count(self, what: str) -> None:
+        self.scene_events[what] = self.scene_events.get(what, 0) + 1
 
     def _by(self, context: Any, skip: str | None = None) -> dict[str, Any]:
         found = self.contexts.describe(context, skip=skip) if self.contexts is not None else None

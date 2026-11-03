@@ -39,6 +39,8 @@ from homeassistant.helpers import entity_registry as er
 
 from .config_flow import _build_schema, validate_schedule
 from .const import (
+    RUNNING_VERSION,
+    installed_version,
     CONF_WEEKLY_DIGEST,
     CONF_WEEKLY_DIGEST_DAY,
     DATA_STATS,
@@ -283,13 +285,17 @@ async def websocket_clear_history(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): WS_STATUS})
-@callback
-def websocket_status(
+@websocket_api.async_response
+async def websocket_status(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     if (entry := _entry(hass, connection, msg["id"])) is None:
         return
-    connection.send_result(msg["id"], {"status": _status(hass, entry)})
+    status = _status(hass, entry)
+    # Updated but not restarted yet: the panel says so.
+    status["running_version"] = RUNNING_VERSION
+    status["installed_version"] = await hass.async_add_executor_job(installed_version)
+    connection.send_result(msg["id"], {"status": status})
 
 
 @websocket_api.require_admin

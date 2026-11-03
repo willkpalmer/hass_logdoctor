@@ -8,7 +8,7 @@ const VERSION = new URLSearchParams(V).get("v") || "";
 const {
   BACKUP_SOURCES, COLLAPSED_KEY, OTHER_GROUP, PAGE_SIZE, SWS, VIEW_STATE_KEY, WS,
   duration, downloadFile, integrationPage, loadJSON, num, saveJSON, startupSeconds,
-  tabOf, toCSV, toMarkdown, upgradeProperties,
+  navigate, tabOf, toCSV, toMarkdown, upgradeProperties,
 } = await import(`./ld-util.js${V}`);
 const {
   HEALTH_KINDS, IGNORED_COLUMNS, RESOLVED_COLUMN, TAB_HINTS, VIEWS,
@@ -1881,17 +1881,10 @@ export class LogDoctorPanel extends HTMLElement {
 
   // Opens a page of Home Assistant's, as its own links do.
   _navigate(href, search) {
-    // A search for the page opened (see _groupLinks).
-    history.pushState(search ? { filter: search } : null, "", href);
-    window.dispatchEvent(new CustomEvent("location-changed"));
+    // A search for the page opened (see _groupLinks) goes in the history
+    // state, where the entities page looks for it.
+    navigate(href, search ? { filter: search } : null);
     if (!search) return;
-    // Home Assistant keeps the entities page once opened and only
-    // re-attaches it after this event, so a second visit would miss the
-    // new URL and keep the first one's filters. Tell it again once it's
-    // attached; it ignores the event if its filters already match.
-    for (const delay of [100, 500]) {
-      setTimeout(() => window.dispatchEvent(new CustomEvent("location-changed")), delay);
-    }
     // The search box is filled from the history state by the entities
     // page itself, which is Home Assistant's own business and could change:
     // if it hasn't been filled once the page is up, fill it in directly.
@@ -1980,6 +1973,18 @@ export class LogDoctorPanel extends HTMLElement {
   _renderStatus() {
     const el = this._el("scan-status");
     const s = this._status;
+    // Updated, but Home Assistant is still running the version it had: the
+    // new one only runs after a restart (reloading the integration isn't
+    // enough).
+    if (s && s.running_version && s.installed_version && s.running_version !== s.installed_version) {
+      el.replaceChildren();
+      const warn = document.createElement("span");
+      warn.className = "warn";
+      warn.textContent = `⚠ Restart Home Assistant to finish updating to v${s.installed_version}`;
+      el.appendChild(warn);
+      el.title = `WP Log Doctor v${s.installed_version} is installed, but Home Assistant is still running v${s.running_version}. Restart Home Assistant (Settings → System → Restart) - reloading the integration isn't enough.`;
+      return;
+    }
     if (!s || !s.last_scan) {
       el.textContent = s ? "No scan yet" : "";
       return;
