@@ -58,8 +58,9 @@ async def test_trigger_name_from_the_trace(hass):
     hass.bus.async_fire("second")
     hass.states.async_set("input_boolean.x", "on", {"friendly_name": "Guest mode"})
     await hass.async_block_till_done()
-    names = [r["trigger_name"] for r in store.records]
-    assert names == ["Event first", "The second one", "Guest mode → on"]
+    # (Newer Home Assistant may run them in another order.)
+    names = sorted(r["trigger_name"] for r in store.records)
+    assert names == ["Event first", "Guest mode → on", "The second one"]
     assert all(r["trigger"] for r in store.records)
     unsub()
     await store.async_shutdown()

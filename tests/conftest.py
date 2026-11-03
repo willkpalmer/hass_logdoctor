@@ -29,11 +29,20 @@ async def hass(tmp_path):
     frame.async_setup(instance)
     # For the tests that set up Home Assistant's own integrations.
     loader.async_setup(instance)
+    # As Home Assistant's own startup does (newer versions need these for
+    # automations' triggers and conditions).
+    from homeassistant.helpers import condition, trigger
+
+    for helper in (condition, trigger):
+        if hasattr(helper, "async_setup"):
+            await helper.async_setup(instance)
     instance.config_entries = config_entries.ConfigEntries(instance, {})
     await instance.config_entries.async_initialize()
-    await ar.async_load(instance)
-    await dr.async_load(instance)
-    await er.async_load(instance)
+    for registry in (ar, dr, er):
+        # Newer Home Assistant creates a registry before loading it.
+        if hasattr(registry, "async_setup"):
+            registry.async_setup(instance)
+        await registry.async_load(instance)
     yield instance
     await instance.async_stop(force=True)
 

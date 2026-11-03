@@ -106,7 +106,10 @@ def _from_trace(hass: HomeAssistant, entity: Any, event: Event) -> tuple[int | N
     traces = (hass.data.get("trace") or {}).get(f"automation.{unique_id}") if unique_id else None
     if not traces:
         return None, None
-    for trace in reversed(list(traces.values())):
+    # A dict of runs, or (Home Assistant 2026.10 on) an object holding runs
+    # and runs that weren't triggered, with all_traces().
+    found = list(traces.all_traces()) if hasattr(traces, "all_traces") else list(traces.values())
+    for trace in reversed(found):
         context = getattr(trace, "context", None)
         if context is None or context.id != event.context.id:
             continue

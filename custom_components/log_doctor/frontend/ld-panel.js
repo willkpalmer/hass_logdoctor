@@ -48,9 +48,13 @@ export class LogDoctorPanel extends HTMLElement {
         expanded: new Set(),
         collapsed: this._loadCollapsed(name),
         filter: typeof was.filter === "string" ? was.filter : "",
-        kind: typeof was.kind === "string" ? was.kind : "",
+        // A drop-down choice that no longer exists, or (Automations: History,
+        // 0.46.0) one remembered from before scenes were listed, which would
+        // now hide them: back to everything.
+        kind: typeof was.kind === "string" && view.kinds.some(([value]) => value === was.kind)
+          && !(name === "runs" && !was.layout) ? was.kind : "",
         hours: Number(was.hours) || 0,
-        automation: typeof was.automation === "string" ? was.automation : "",
+        automation: typeof was.automation === "string" && !(name === "runs" && !was.layout) ? was.automation : "",
         // Startup & shutdown: only one restart's messages (see Restart history).
         run: null,
         limit: PAGE_SIZE,
@@ -289,7 +293,8 @@ export class LogDoctorPanel extends HTMLElement {
   _saveViewState() {
     const saved = {};
     for (const [name, st] of Object.entries(this._state)) {
-      saved[name] = { sort: st.sort, filter: st.filter, kind: st.kind, hours: st.hours, automation: st.automation };
+      // layout 2: Automations: History lists scenes too (see the constructor).
+      saved[name] = { sort: st.sort, filter: st.filter, kind: st.kind, hours: st.hours, automation: st.automation, layout: 2 };
     }
     saveJSON(VIEW_STATE_KEY, saved);
   }

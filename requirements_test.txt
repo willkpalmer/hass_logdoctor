@@ -1,6 +1,7 @@
-# Home Assistant itself, for the tests in tests/ (see tests/conftest.py),
-# and the integration's own requirement (manifest.json).
-homeassistant==2026.2.3
+# For the tests in tests/ (see tests/conftest.py): Home Assistant itself -
+# the latest release, which needs Python 3.14 (CI also runs 2026.2.3 on
+# Python 3.13) - and the integration's own requirement (manifest.json).
+homeassistant
 openai>=1.0
 pytest
 pytest-asyncio

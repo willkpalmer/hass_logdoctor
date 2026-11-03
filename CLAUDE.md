@@ -16,6 +16,15 @@ browser. The panel is plain JavaScript modules with no build step:
 module imports the ones it needs the same way, so they're never mixed
 across versions.
 
+## Target the latest Home Assistant
+
+The user always runs the latest production releases of Home Assistant Core
+and Supervisor. Test against the latest Core release (Python 3.14, see
+`requirements_test.txt`); Home Assistant's internals (traces, registries,
+trigger and condition helpers) change between releases, so code that
+reaches into them must keep working on the latest one. CI also runs an
+older release.
+
 ## Only release when asked
 
 Don't create a release unless the user explicitly asks for one. Until
