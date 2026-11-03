@@ -365,7 +365,7 @@ says what the current tab holds:
   collapse a heading, or sort by a column heading); <kbd>/</kbd> jumps to
   the filter and <kbd>Esc</kbd> clears the selection.
 - Each list's filter, drop-downs and sort are remembered in your browser.
-  Pages always open on their first tab (**Open**, or **Runs**), whichever
+  Pages always open on their first tab (**Open**, or **History**), whichever
   tab you were on last.
 - New entries appear live, without refreshing. On a phone, each entry shows
   as a card and the column names become sort buttons.
