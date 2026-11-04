@@ -19,6 +19,9 @@ const { STYLE, TEMPLATE } = await import(`./ld-style.js${V}`);
 const OTHER_PAGES = ["insights", "settings"];
 // How long Undo is offered after an action.
 const UNDO_MS = 8000;
+// A failure is a run's when it's timed within this of the run (both are the
+// automation_triggered event's time).
+const FAILED_RUN_WINDOW_MS = 5000;
 // How often the header's last-scan status is refreshed.
 const STATUS_INTERVAL = 5 * 60 * 1000;
 
@@ -413,6 +416,7 @@ export class LogDoctorPanel extends HTMLElement {
     const view = VIEWS[this._view];
     const st = this._st();
     const needle = st.filter.trim().toLowerCase();
+    if (this._view === "runs") this._markFailedRuns(st.records);
     let rows = st.records.filter((r) => tabOf(r) === st.tab);
     if (view.timeWindow && st.hours && st.tab === "open") {
       const since = new Date(Date.now() - st.hours * 3600 * 1000).toISOString();
@@ -1180,6 +1184,29 @@ export class LogDoctorPanel extends HTMLElement {
   // Automations: History rows - when, which automation or scene, and what
   // started it: the trigger (or Manual) and who, for a run; who or what
   // activated it, for a scene.
+  // Which automation runs failed: a "Failed:" entry on the Failures list
+  // (any tab but Not monitored) for the same automation, timed at the run's
+  // trigger (see automation_monitor.py). Sets r._failure on each run.
+  _markFailedRuns(runs) {
+    const byEntity = new Map();
+    for (const f of this._st("failures").records) {
+      if (tabOf(f) === "unmonitored" || !f.entity_id || !(f.reason || "").startsWith("Failed:")) continue;
+      if (!byEntity.has(f.entity_id)) byEntity.set(f.entity_id, []);
+      byEntity.get(f.entity_id).push({ ms: Date.parse(f.when), f });
+    }
+    for (const r of runs) {
+      r._failure = null;
+      const candidates = r.kind === "run" ? byEntity.get(r.entity_id) : null;
+      if (!candidates) continue;
+      const ms = r._ms ?? Date.parse(r.when);
+      let best = FAILED_RUN_WINDOW_MS + 1;
+      for (const c of candidates) {
+        const gap = Math.abs(c.ms - ms);
+        if (gap < best) { best = gap; r._failure = c.f; }
+      }
+    }
+  }
+
   _runCells(tr, r) {
     // The day is the group's heading, so entries show the time; the Not
     // monitored tab's "last" keeps its date.
@@ -1191,6 +1218,16 @@ export class LogDoctorPanel extends HTMLElement {
 
     const scene = r.kind === "scene" || (r.entity_id || "").startsWith("scene.");
     const tdName = document.createElement("td");
+    if (r._failure) {
+      const mark = document.createElement("a");
+      mark.href = "#failures";
+      mark.className = "fail-mark";
+      mark.dataset.failureId = r._failure.id;
+      mark.textContent = "!";
+      mark.title = `This run failed - open it on Failures:\n${r._failure.reason}`;
+      mark.setAttribute("aria-label", "Failed - open on Failures");
+      tdName.appendChild(mark);
+    }
     if (scene) tdName.appendChild(this._chip("scene", "Scene"));
     if (r.config_id) {
       const a = document.createElement("a");
@@ -1563,6 +1600,21 @@ export class LogDoctorPanel extends HTMLElement {
       target.selected.clear();
       if (record) target.expanded.add(record.id);
       this._setView(name, { keepTab: true });
+      this._saveViewState();
+      return;
+    }
+    // History's "!": the run's entry on Failures.
+    const failLink = find("failureId");
+    if (failLink) {
+      ev.preventDefault();
+      const target = this._st("failures");
+      const record = target.records.find((f) => f.id === failLink.dataset.failureId);
+      target.tab = record ? tabOf(record) : "open";
+      target.filter = record ? record.entity_id : "";
+      target.kind = "";
+      target.limit = PAGE_SIZE;
+      target.selected.clear();
+      this._setView("failures", { keepTab: true });
       this._saveViewState();
       return;
     }

@@ -214,6 +214,13 @@ a:hover { text-decoration: underline; }
 .chip.failed, .chip.error { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }
 .chip.critical { background: var(--error-color, #db4437); color: #fff; }
 .chip.missed, .chip.warning, .chip.stopped, .chip.slow { background: rgba(255, 152, 0, 0.18); color: var(--warning-color, #e68a00); }
+.fail-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-right: 6px; border-radius: 50%;
+  background: var(--error-color, #db4437); color: #fff !important;
+  font-weight: 700; font-size: 11px; line-height: 1; text-decoration: none !important;
+  vertical-align: 1px;
+}
 .chip.scene { background: rgba(156, 39, 176, 0.14); color: #9c27b0; }
 .chip.integration_off { background: rgba(127, 127, 127, 0.15); color: var(--secondary-text-color, #727272); }
 .chip.setup { background: rgba(219, 68, 55, 0.15); color: var(--error-color, #db4437); }

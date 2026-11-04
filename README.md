@@ -489,7 +489,10 @@ happened, as they happen (`/log-doctor#runs`), newest first:
 - **When** - when an automation's actions started (runs stopped by their
   conditions aren't included) or a scene was activated.
 - **Automation / scene** - links to the automation's traces, or the
-  scene's editor; scenes are marked **Scene**.
+  scene's editor; scenes are marked **Scene**. A run that failed has a red
+  **!** in front of it - one with an entry on **Failures** (on any tab but
+  Not monitored) - and the **!** opens that entry there; its reason is in
+  the **!**'s tooltip.
 - **Triggered / activated by** - for an automation, which of its triggers
   started it: its name, if you've renamed it in the automation editor, or
   otherwise a short description of it such as "Sunset +00:15:00", "At
@@ -513,7 +516,7 @@ from, followed back through automations and scripts.
 
 Filter by name, trigger or who in the filter box; to one automation or
 scene with the drop-down next to it; to automation runs, scene
-activations, triggered or manual runs, or what a person started; and by
+activations, triggered or manual runs, failed runs, or what a person started; and by
 time: **Last hour**, **Last 6 hours**, **Last 12 hours** or **Last 24
 hours** (or everything recorded).
 

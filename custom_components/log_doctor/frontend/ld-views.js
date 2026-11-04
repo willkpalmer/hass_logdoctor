@@ -203,6 +203,7 @@ export const VIEWS = {
     kinds: [
       ["", "Everything"], ["automations", "Automation runs"], ["scenes", "Scene activations"],
       ["triggered", "Triggered runs"], ["manual", "Manual runs"], ["user", "Started by a person"],
+      ["failed", "Failed runs"],
     ],
     kindOf: (r) => (r.kind === "scene" ? "scene" : r.manual ? "manual" : "triggered"),
     matches: (r, kind) => ({
@@ -211,12 +212,14 @@ export const VIEWS = {
       triggered: r.kind === "run" && !r.manual,
       manual: r.kind === "run" && r.manual,
       user: r.by_kind === "user",
+      // Set by the panel from the Failures list (see _markFailedRuns).
+      failed: !!r._failure,
     })[kind],
     search: (r) => `${r.name} ${r.entity_id} ${r.kind === "scene" ? "scene" : r.manual ? "Manual" : `${r.trigger_name || ""} ${r.trigger || ""}`} ${r.by || ""} ${r.by_kind || ""}`,
     defaultSort: { key: "when", dir: -1 },
     // Grouped by day (in Home Assistant's time zone), newest first, each
     // collapsible; the day is worked out once per update (see _onMessage).
-    decorate: (r, panel) => { r._day = panel._date(r.when); },
+    decorate: (r, panel) => { r._day = panel._date(r.when); r._ms = Date.parse(r.when); },
     groupBy: (r) => r._day || OTHER_GROUP,
     groupSort: (a, b) => b.localeCompare(a),
     groupLabel: (day, panel) => panel._dayLabel(day),
