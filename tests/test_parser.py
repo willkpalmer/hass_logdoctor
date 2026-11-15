@@ -106,3 +106,21 @@ async def test_records_from_unrecognized_journal_lines_are_regrouped(hass):
     assert record["first_seen"] == "2026-10-26T00:00:00+00:00"
     assert record["last_logged"].startswith("2026-10-26T21:36:01")
     await store.async_shutdown()
+
+
+def test_copy_prompt_separately_or_together():
+    from custom_components.log_doctor.investigation import Anomaly, build_copy_prompt
+
+    def anomaly(logger):
+        return Anomaly("ERROR", 1, logger, "sig", "2026-01-01", "2026-01-01", "boom")
+
+    one = build_copy_prompt([anomaly("a")], together=True)
+    assert "Anomaly 1 of" not in one and "together" not in one
+
+    separate = build_copy_prompt([anomaly("a"), anomaly("b")])
+    assert "Treat each one separately" in separate
+    assert "## Anomaly 2 of 2" in separate
+
+    together = build_copy_prompt([anomaly("a"), anomaly("b")], together=True)
+    assert "single answer" in together and "Do not answer each anomaly separately" in together
+    assert "unrelated" in together and "Treat each one separately" not in together

@@ -750,6 +750,7 @@ export class LogDoctorPanel extends HTMLElement {
     ];
     const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
     copyBtn.disabled = n === 0;
+    if (n < 2) this._el("copy-menu").hidden = true;
     if (!copyBtn.dataset.busy) copyBtn.textContent = n ? `Copy investigation prompt (${n})` : "Copy investigation prompt";
     this.shadowRoot.querySelector('[data-action="ask-clear"]').disabled = archivedCount === 0;
     if (archivedCount === 0) this._el("confirm").classList.remove("open");
@@ -765,8 +766,8 @@ export class LogDoctorPanel extends HTMLElement {
   // prompt comes from the integration (the same one the investigation stage
   // sends); the clipboard write is started straight from the click, with
   // the text still to come, so browsers that need a user gesture allow it.
-  async _copyPrompt(btn, ids) {
-    const fetched = this._hass.callWS({ type: WS.INVESTIGATION_PROMPT, ids });
+  async _copyPrompt(btn, ids, mode = "separate") {
+    const fetched = this._hass.callWS({ type: WS.INVESTIGATION_PROMPT, ids, mode });
     const label = btn.textContent;
     const done = (text) => {
       btn.textContent = text;
@@ -1655,6 +1656,9 @@ export class LogDoctorPanel extends HTMLElement {
     // Clicking anywhere else closes the Export menu.
     const exportMenu = this._el("export");
     if (exportMenu.open && !path.includes(exportMenu)) exportMenu.open = false;
+    // And the Copy investigation prompt menu.
+    const copyWrap = this._el("copy-wrap");
+    if (!path.includes(copyWrap)) this._el("copy-menu").hidden = true;
     // Stop monitoring a whole integration, from its heading.
     const integrationOff = find("unmonitorIntegration");
     if (integrationOff) {
@@ -1769,10 +1773,21 @@ export class LogDoctorPanel extends HTMLElement {
         await this._act(WS.UNIGNORE, ids, `Stopped ignoring ${nouns(ids.length)}`, { type: WS.IGNORE });
         break;
       }
-      case "copy-prompt": {
+      case "copy-prompt":
+      case "copy-prompt-separate":
+      case "copy-prompt-together": {
         // In the order they're listed.
         const ids = this._visible().filter((r) => st.selected.has(r.id)).map((r) => r.id);
-        if (ids.length) await this._copyPrompt(btn, ids);
+        if (!ids.length) break;
+        const menu = this._el("copy-menu");
+        // Several entries: ask whether to look at them one by one or together.
+        if (action === "copy-prompt" && ids.length > 1) {
+          menu.hidden = !menu.hidden;
+          break;
+        }
+        menu.hidden = true;
+        const copyBtn = this.shadowRoot.querySelector('[data-action="copy-prompt"]');
+        await this._copyPrompt(copyBtn, ids, action === "copy-prompt-together" ? "together" : "separate");
         break;
       }
       case "ask-delete": {
@@ -1859,6 +1874,7 @@ export class LogDoctorPanel extends HTMLElement {
     const st = this._st();
     this._el("confirm").classList.remove("open");
     this._el("export").open = false;
+    this._el("copy-menu").hidden = true;
     if (!st.selected.size) return;
     st.selected.clear();
     this._render();

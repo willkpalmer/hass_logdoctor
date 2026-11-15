@@ -388,8 +388,16 @@ recognizes the message (marked **Known issue**), and the raw log lines
 the investigation stage would send the AI model - its instructions plus
 each entry's logger, level, count, first/last seen and raw log lines - to
 the clipboard, so you can paste it into any AI chat. Several entries go
-into one prompt, numbered, in the order they're listed. It doesn't need
-an OpenAI API key and sends nothing anywhere itself.
+into one prompt, numbered, in the order they're listed, and you choose how
+the AI should look at them:
+
+- **Each separately** - an answer for each entry, in turn.
+- **Together, as one problem** - a single answer for the whole group: what
+  connects them (a shared cause, or one error leading to the others), the
+  likely cause and how to fix it. Only entries that turn out to be
+  unrelated to the rest get an answer of their own, after the main one.
+
+It doesn't need an OpenAI API key and sends nothing anywhere itself.
 
 If an anomaly you've archived is logged again *after* you archived it,
 the next scan moves it back to **Open**, marked **Recurred**, so a fix

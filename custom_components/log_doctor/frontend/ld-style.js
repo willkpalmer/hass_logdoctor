@@ -102,6 +102,8 @@ log-doctor-settings { flex: 1 1 auto; min-height: 0; overflow: auto; }
 }
 .export .menu button:hover, .export .menu button:focus-visible { background: var(--secondary-background-color, #f5f5f5); }
 .export .menu .sub { padding: 6px 14px 8px; }
+.export .menu[hidden] { display: none; }
+.export > .action { display: inline-block; }
 /* Undo, after an action. */
 .snackbar {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 5;
@@ -333,8 +335,17 @@ export const TEMPLATE = `
         <option value="24">Last 24 hours</option>
       </select>
       <span class="spacer"></span>
-      <button class="action secondary" data-action="copy-prompt" data-only-view="logs restarts" disabled
-        title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
+      <span class="export" data-el="copy-wrap" data-only-view="logs restarts">
+        <button class="action secondary" data-action="copy-prompt" disabled aria-haspopup="menu"
+          title="Copy the prompt the investigation stage would send for the selected entries, to paste into any AI chat">Copy investigation prompt</button>
+        <div class="menu" data-el="copy-menu" role="menu" hidden>
+          <div class="sub">Ask the AI to look at them…</div>
+          <button data-action="copy-prompt-separate" role="menuitem"
+            title="An answer for each entry, in turn">Each separately</button>
+          <button data-action="copy-prompt-together" role="menuitem"
+            title="One answer for them all, as one problem - with separate answers only for any that turn out to be unrelated">Together, as one problem</button>
+        </div>
+      </span>
       <button class="action secondary" data-action="to-restarts" data-only-view="logs" disabled
         title="These only happen when Home Assistant starts or stops: move them to Startup &amp; shutdown">Move to Startup &amp; shutdown</button>
       <button class="action secondary" data-action="to-operational" data-only-view="restarts" disabled

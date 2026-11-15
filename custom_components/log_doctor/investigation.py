@@ -153,21 +153,40 @@ def anomaly_from_record(record: dict) -> Anomaly:
     )
 
 
-def build_copy_prompt(anomalies: list[Anomaly]) -> str:
+def build_copy_prompt(anomalies: list[Anomaly], together: bool = False) -> str:
     """One prompt covering the given anomalies, to paste into any AI chat.
 
     The same instructions and per-anomaly details the investigation stage
-    sends the model, combined into a single message.
+    sends the model, combined into a single message. With several
+    anomalies, `together` asks for one answer treating them as one problem
+    (separate answers only for any that turn out to be unrelated); otherwise
+    each is answered in turn.
     """
     if len(anomalies) == 1:
         return f"{SYSTEM_PROMPT}\n\n---\n\n{build_user_prompt(anomalies[0])}\n"
-    parts = [
-        SYSTEM_PROMPT,
-        f"There are {len(anomalies)} anomalies below. Answer each one in turn, "
-        "under a heading with its number and logger.",
-    ]
+    count = len(anomalies)
+    if together:
+        guidance = (
+            f"There are {count} anomalies below, which may well be related. Look at "
+            "them together, as one problem: work out what connects them - a shared "
+            "cause, or one error leading to the others - and give a single answer "
+            "for the group as a whole (what is going wrong, the most likely cause, "
+            "and the steps to resolve it), referring to anomalies by number where "
+            "it helps. Do not answer each anomaly separately.\n\n"
+            "The only exception: if any of them are unrelated to the rest - neither "
+            "caused by the same issue nor a consequence of it - answer just those "
+            "separately, after the main answer, under a heading with the anomaly's "
+            "number and logger, and say briefly why it is unrelated. If they are "
+            "all related, give the single answer only."
+        )
+    else:
+        guidance = (
+            f"There are {count} anomalies below. Treat each one separately: answer "
+            "each in turn, under a heading with its number and logger."
+        )
+    parts = [SYSTEM_PROMPT, guidance]
     for number, anomaly in enumerate(anomalies, 1):
-        parts.append(f"---\n\n## Anomaly {number} of {len(anomalies)}\n\n{build_user_prompt(anomaly)}")
+        parts.append(f"---\n\n## Anomaly {number} of {count}\n\n{build_user_prompt(anomaly)}")
     return "\n\n".join(parts) + "\n"
 
 

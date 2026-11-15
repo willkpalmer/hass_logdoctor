@@ -28,7 +28,8 @@ review ("operational") and Startup & shutdown ("restart") views.
 
 log_doctor/review/investigation_prompt builds, for selected Log review
 entries, the prompt the investigation stage would send (see
-investigation.py), for the panel to copy to the clipboard.
+investigation.py), for the panel to copy to the clipboard - asking for an
+answer for each entry, or (mode "together") one answer for them all.
 
 All commands are admin-only, like the panel itself. The panel subscribes
 once per list and gets the full list back straight away ({"records"}) and
@@ -222,7 +223,13 @@ async def websocket_clear_archived(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
-    {vol.Required("type"): WS_INVESTIGATION_PROMPT, vol.Required("ids"): vol.All([str], vol.Length(min=1, max=1_000))}
+    {
+        vol.Required("type"): WS_INVESTIGATION_PROMPT,
+        vol.Required("ids"): vol.All([str], vol.Length(min=1, max=1_000)),
+        # Several entries: an answer for each ("separate"), or one for them
+        # all as one problem ("together").
+        vol.Optional("mode", default="separate"): vol.In(["separate", "together"]),
+    }
 )
 @callback
 def websocket_investigation_prompt(
@@ -239,7 +246,7 @@ def websocket_investigation_prompt(
         connection.send_error(msg["id"], "not_found", "None of those log entries exist any more")
         return
     connection.send_result(
-        msg["id"], {"prompt": build_copy_prompt(anomalies), "count": len(anomalies)}
+        msg["id"], {"prompt": build_copy_prompt(anomalies, together=msg["mode"] == "together"), "count": len(anomalies)}
     )
 
 
