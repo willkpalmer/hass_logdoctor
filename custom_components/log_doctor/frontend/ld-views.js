@@ -340,7 +340,7 @@ export const VIEWS = {
     filterPlaceholder: "Filter by source, logger or message",
     kinds: [
       ["", "Everything"], ["problem", "Problems"], ["success", "Successes"],
-      ["ha", BACKUP_SOURCES.ha], ["gdrive", BACKUP_SOURCES.gdrive],
+      ["ha", BACKUP_SOURCES.ha], ["gdrive", BACKUP_SOURCES.gdrive], ["kuma", BACKUP_SOURCES.kuma],
     ],
     kindOf: (r) => r.kind,
     matches: (r, kind) => (BACKUP_SOURCES[kind] ? r.source === kind : r.kind === kind),

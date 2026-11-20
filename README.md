@@ -693,7 +693,7 @@ restart - unless it was already on this list, which keeps its original
 
 ### Backups
 
-Everything about backups, in one place, from two sources:
+Everything about backups, in one place, from three sources:
 
 - **Home Assistant** - its built-in backup: the backup integration, the
   backup platforms of integrations that store backups (Home Assistant
@@ -707,6 +707,18 @@ Everything about backups, in one place, from two sources:
   with **Check Supervisor/Host/add-on logs** on). From the add-on's own
   log, only lines in Home Assistant's log format are read, so lines from
   add-on versions before 0.9.0 (which used another format) are ignored.
+- **Uptime Kuma** - backups that run outside Home Assistant and report to
+  an [Uptime Kuma](https://www.home-assistant.io/integrations/uptime_kuma/)
+  push monitor, such as a script on another machine cloning its disk to
+  an NVMe drive (e.g. the monitor "utils.camelot NVMe Backup"). Every
+  Uptime Kuma monitor with "backup" in its name is watched through its
+  **Status** sensor: when it goes **down** - the backup failed, or didn't
+  report in time (a missed run, which logs no error anywhere) - a problem
+  is added straight away; when it goes **up**, a success. Uptime Kuma only
+  says whether the backup is OK, not each run, so only changes are added
+  (a restart or a reload of the integration adds nothing); *pending*
+  (Uptime Kuma retrying) and *maintenance* are left alone. The monitor's
+  name is shown under the source.
 
 Two kinds of entry:
 
@@ -734,6 +746,24 @@ Columns: **Status** (Success or the problem's level), **Last logged**, **Last fo
 **Source** (with the logger), **Message** and **Count**; filter to
 problems, successes or one source. Click ▸ for the details and latest log
 lines.
+
+**Backup failure notifications** (Settings → Notifications & weekly
+digest, on by default): a notification - and a push to the phone chosen
+there - when a backup fails:
+
+- Home Assistant's own backup, the moment it fails, or an error in its
+  backup log messages found by a scan (e.g. an upload to a backup
+  location failing);
+- the GDrive Backup Utility: its errors as they reach Home Assistant's
+  log (the add-on forwards them), or found by a scan in either log -
+  e.g. an upload to Google Drive failing;
+- a backup watched by Uptime Kuma going down: failed, or missed.
+
+Errors only, not warnings. There's one notification per source (one per
+Uptime Kuma monitor), replaced by the next failure, each linking here; the
+same failure seen as it happens and again by the next scan is only
+notified once, as are failures more than a day old when found (the first
+scan's look back).
 
 ### Restart history
 
@@ -817,9 +847,10 @@ a line saying what it covers, and links to each at the top:
 - **Devices & integrations** - turn the checks on or off, how long a
   device must be offline before it's reported, and when a device counts as
   flapping.
-- **Notifications & weekly digest** - the phone to push automation
-  failures, missed and stopped runs to (picked from your Companion app
-  devices), the notify service for the daily scan summary and weekly digest
+- **Notifications & weekly digest** - whether to be notified when a
+  backup fails (see [Backups](#backups)), the phone to push automation
+  failures, missed and stopped runs, and backup failures to (picked from
+  your Companion app devices), the notify service for the daily scan summary and weekly digest
   (with suggestions), and whether and on which day to send the
   [weekly digest](#weekly-digest).
 - **Investigation (OpenAI)** - the API key, the model, the per-scan cap,

@@ -22,6 +22,7 @@ from .const import (
     DATA_FAILURE_STORE,
     DATA_FLAPS,
     DATA_HEALTH_STORE,
+    DATA_KUMA_BACKUPS,
     DATA_RESTART_HISTORY,
     DATA_RUN_STORE,
     DATA_STATS,
@@ -86,6 +87,9 @@ async def async_get_config_entry_diagnostics(
             "listening": runs.contexts is not None,
             "scene_state_changes": dict(runs.scene_events),
         }
+    if (kuma := hass.data.get(DATA_KUMA_BACKUPS)) is not None:
+        # Backups watched by Uptime Kuma: how many monitors were found.
+        result["uptime_kuma_backups"] = {"monitors": len(kuma.monitors)}
     result["version"] = {"running": RUNNING_VERSION}
     if coordinator is not None:
         data = coordinator.store.data

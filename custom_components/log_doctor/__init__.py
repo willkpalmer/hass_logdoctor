@@ -50,6 +50,9 @@ from .const import (
     DEFAULT_MONITOR_HEALTH,
     DEFAULT_OFFLINE_HOURS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
+    CONF_NOTIFY_BACKUP_FAILURES,
+    DEFAULT_NOTIFY_BACKUP_FAILURES,
+    DATA_KUMA_BACKUPS,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
@@ -102,6 +105,8 @@ from .missed_schedules import MissedScheduleWatch
 from .failure_log import convert_legacy_failure_log_sync
 from .anomaly_store import AnomalyStore
 from .backup_monitor import BackupEventMonitor
+from .backup_notify import BackupFailureNotifier, async_watch_gdrive_log
+from .uptime_kuma_backups import UptimeKumaBackupWatch
 from .backup_store import KIND_PROBLEM, BackupStore
 from .backups import backup_source
 from .health_monitor import HealthMonitor
@@ -337,7 +342,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         health_store.recheck = health_monitor.async_check
 
     # Home Assistant's own backups, as they complete or fail.
-    entry.async_on_unload(BackupEventMonitor(hass, backup_store).async_start())
+    # Backup failure notifications (Settings), and backups watched by Uptime Kuma.
+    backup_notifier = None
+    if options.get(CONF_NOTIFY_BACKUP_FAILURES, DEFAULT_NOTIFY_BACKUP_FAILURES):
+        backup_notifier = BackupFailureNotifier(hass, notify_device_id=notify_device_id)
+        coordinator.backup_notifier = backup_notifier
+        entry.async_on_unload(async_watch_gdrive_log(hass, backup_notifier))
+    entry.async_on_unload(BackupEventMonitor(hass, backup_store, backup_notifier).async_start())
+    kuma_backups = UptimeKumaBackupWatch(hass, backup_store, backup_notifier)
+    hass.data[DATA_KUMA_BACKUPS] = kuma_backups
+    entry.async_on_unload(kuma_backups.async_start())
 
     async def _async_scan_now(_call: ServiceCall) -> None:
         await coordinator.async_request_refresh()
@@ -385,6 +399,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ):
             if (stored := hass.data.pop(key, None)) is not None:
                 await stored.async_shutdown()
+        hass.data.pop(DATA_KUMA_BACKUPS, None)
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, SERVICE_SCAN_NOW)
             hass.services.async_remove(DOMAIN, SERVICE_CLEAR_HISTORY)

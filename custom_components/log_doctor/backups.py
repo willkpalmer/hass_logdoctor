@@ -2,7 +2,7 @@
 
 Backup messages go to the Log Doctor panel's "Backups" view (see
 backup_store.py) instead of the general Log review, so a failing backup
-shows up in one place only. Two sources are recognised:
+shows up in one place only. Two log sources are recognised:
 
 - "ha": Home Assistant's built-in backup - the backup integration
   (homeassistant.components.backup.*), the backup platforms of other
@@ -19,6 +19,9 @@ Warnings and worse from either source are backup problems. The add-on's
 INFO lines saying a backup finished or was uploaded are backup successes;
 Home Assistant's own backup doesn't log its successes, so those come from
 its backup manager instead (see backup_monitor.py).
+
+A third source, "kuma", is backups that report to an Uptime Kuma monitor
+(see uptime_kuma_backups.py), which aren't in any log Log Doctor reads.
 """
 from __future__ import annotations
 
@@ -30,6 +33,15 @@ from .log_parser import LogEntry
 
 SOURCE_HA = "ha"
 SOURCE_GDRIVE = "gdrive"
+# Backups watched by an Uptime Kuma monitor (see uptime_kuma_backups.py),
+# e.g. a disk clone run on another machine; never from log lines.
+SOURCE_KUMA = "kuma"
+
+SOURCE_NAMES = {
+    SOURCE_HA: "Home Assistant",
+    SOURCE_GDRIVE: "GDrive Backup",
+    SOURCE_KUMA: "Uptime Kuma",
+}
 
 # The add-on's slug and the prefix of all of its logger names. Installed
 # from a repository, the slug gets a prefix: "<hash>_hass_gdrive_backup".

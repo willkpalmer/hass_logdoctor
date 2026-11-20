@@ -33,7 +33,7 @@ export const PAGE_SIZE = 500;
 
 export const LEVEL_RANK = { WARNING: 1, ERROR: 2, CRITICAL: 3 };
 
-export const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup" };
+export const BACKUP_SOURCES = { ha: "Home Assistant", gdrive: "GDrive Backup", kuma: "Uptime Kuma" };
 // Heading for Devices & integrations rows that don't belong to an integration
 export const OTHER_GROUP = "Other";
 // Where the collapsed groups of each view are remembered, per browser.

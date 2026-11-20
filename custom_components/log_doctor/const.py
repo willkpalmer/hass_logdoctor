@@ -60,6 +60,11 @@ CONF_MAX_INVESTIGATED = "max_investigated"
 CONF_MONITOR_AUTOMATIONS = "monitor_automations"
 DEFAULT_MONITOR_AUTOMATIONS = True
 CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE = "automation_failure_notify_device"
+# A notification (and push, to the device above) when a backup fails:
+# Home Assistant's own, the GDrive Backup Utility's, or one watched by
+# Uptime Kuma (see backup_notify.py, uptime_kuma_backups.py).
+CONF_NOTIFY_BACKUP_FAILURES = "notify_backup_failures"
+DEFAULT_NOTIFY_BACKUP_FAILURES = True
 # Devices & integrations checks (health_monitor.py).
 CONF_MONITOR_HEALTH = "monitor_health"
 DEFAULT_MONITOR_HEALTH = True
@@ -125,6 +130,8 @@ NOTIFICATION_ID_AUTOMATION_FAILURE_PREFIX = "log_doctor_automation_failure_"
 NOTIFICATION_ID_MISSED_SCHEDULES = "log_doctor_missed_schedules"
 NOTIFICATION_ID_STOPPED_AUTOMATIONS = "log_doctor_stopped_automations"
 NOTIFICATION_ID_WEEKLY_DIGEST = "log_doctor_weekly_digest"
+# One per backup source: "<prefix><source>".
+NOTIFICATION_ID_BACKUP_FAILURE_PREFIX = "log_doctor_backup_failed_"
 
 # hass.data key for the failure store (failure_store.py), kept apart from
 # hass.data[DOMAIN], which only holds coordinators keyed by entry ID.
@@ -136,6 +143,7 @@ DATA_RESTART_HISTORY = f"{DOMAIN}_restart_history"
 DATA_RUN_STORE = f"{DOMAIN}_automation_runs"
 DATA_STATS = f"{DOMAIN}_stats"
 DATA_FLAPS = f"{DOMAIN}_flaps"
+DATA_KUMA_BACKUPS = f"{DOMAIN}_kuma_backups"
 DATA_PANEL_STATIC_REGISTERED = f"{DOMAIN}_panel_static_registered"
 
 # The Log Doctor sidebar panel (see panel.py / frontend/); its view is

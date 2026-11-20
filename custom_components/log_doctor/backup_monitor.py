@@ -21,6 +21,7 @@ from homeassistant.const import EVENT_COMPONENT_LOADED
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
+from .backup_notify import BackupFailureNotifier
 from .backup_store import KIND_PROBLEM, KIND_SUCCESS, BackupStore
 from .backups import SOURCE_HA
 
@@ -32,9 +33,12 @@ _LOGGER_NAME = "homeassistant.components.backup"
 
 
 class BackupEventMonitor:
-    def __init__(self, hass: HomeAssistant, store: BackupStore) -> None:
+    def __init__(
+        self, hass: HomeAssistant, store: BackupStore, notifier: BackupFailureNotifier | None = None
+    ) -> None:
         self.hass = hass
         self.store = store
+        self.notifier = notifier
         self._unsubs: list[CALLBACK_TYPE] = []
 
     @callback
@@ -86,11 +90,15 @@ class BackupEventMonitor:
             )
         elif state == "failed":
             reason = getattr(event, "reason", None) or "unknown_error"
+            message = f"Backup failed: {str(reason).replace('_', ' ')}"
+            now = dt_util.now()
             self.store.async_record_event(
                 source=SOURCE_HA,
                 kind=KIND_PROBLEM,
                 level="ERROR",
                 logger=_LOGGER_NAME,
-                message=f"Backup failed: {str(reason).replace('_', ' ')}",
-                when=dt_util.now(),
+                message=message,
+                when=now,
             )
+            if self.notifier is not None:
+                self.notifier.async_failed(SOURCE_HA, [message], dt_util.as_utc(now))

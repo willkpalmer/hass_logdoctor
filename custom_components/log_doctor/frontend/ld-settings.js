@@ -84,7 +84,8 @@ const SETTINGS_SECTIONS = [
     title: "Notifications & weekly digest",
     description: "Where reports go, and the weekly summary (see Insights for a preview).",
     fields: [
-      { key: "automation_failure_notify_device", label: "Also push automation failures, missed and stopped runs to", type: "device" },
+      { key: "notify_backup_failures", label: "Notify me when a backup fails", type: "bool", help: "Home Assistant's own backup, the GDrive Backup Utility's backup or upload, or a backup watched by Uptime Kuma (a monitor with \"backup\" in its name, e.g. an NVMe backup) going down - failed, or didn't run in time." },
+      { key: "automation_failure_notify_device", label: "Also push automation failures, missed and stopped runs, and backup failures to", type: "device" },
       { key: "mobile_notify_service", label: "Mobile notify service for the daily scan summary and weekly digest", type: "text", datalist: "notify_services", help: "e.g. mobile_app_pixel_10. Leave blank for none." },
       { key: "weekly_digest", label: "Send a weekly digest", type: "bool", help: "The week's new problems, noisiest integrations, automations, devices, restarts and backups." },
       { key: "weekly_digest_day", label: "Send it after the first scheduled scan on", type: "select", options: "weekdays", names: WEEKDAY_NAMES },

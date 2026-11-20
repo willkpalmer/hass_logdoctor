@@ -56,6 +56,8 @@ from .const import (
     DEFAULT_MONITOR_HEALTH,
     DEFAULT_OFFLINE_HOURS,
     CONF_AUTOMATION_FAILURE_NOTIFY_DEVICE,
+    CONF_NOTIFY_BACKUP_FAILURES,
+    DEFAULT_NOTIFY_BACKUP_FAILURES,
     CONF_INCLUDE_SUPERVISOR_LOGS,
     CONF_LOG_PATH,
     CONF_LOOKBACK_HOURS,
@@ -255,6 +257,10 @@ def _build_schema(hass, defaults: dict[str, Any]) -> vol.Schema:
                 CONF_WEEKLY_DIGEST_DAY,
                 default=defaults.get(CONF_WEEKLY_DIGEST_DAY, DEFAULT_WEEKLY_DIGEST_DAY),
             ): SelectSelector(SelectSelectorConfig(options=WEEKDAYS, translation_key="weekday")),
+            vol.Required(
+                CONF_NOTIFY_BACKUP_FAILURES,
+                default=defaults.get(CONF_NOTIFY_BACKUP_FAILURES, DEFAULT_NOTIFY_BACKUP_FAILURES),
+            ): BooleanSelector(),
             # Optional and clearable, so use a suggested value rather than a
             # default (a default would be re-applied when cleared).
             vol.Optional(

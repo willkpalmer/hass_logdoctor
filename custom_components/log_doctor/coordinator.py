@@ -57,6 +57,7 @@ from .log_parser import (
 )
 from .anomaly_store import AnomalyStore
 from .automation_runs import AutomationRunStore
+from .backup_notify import BackupFailureNotifier
 from .backup_store import BackupStore
 from .backups import is_backup_success, is_gdrive_addon, split_backup_entries
 from .failure_store import FailureStore
@@ -116,6 +117,8 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
         self.anomaly_store = anomaly_store
         self.health_store = health_store
         self.backup_store = backup_store
+        # Set up by __init__.py when backup failure notifications are on.
+        self.backup_notifier: BackupFailureNotifier | None = None
         self.restarts = restarts
         self.run_store = run_store
         self.stats = stats
@@ -247,6 +250,12 @@ class LogDoctorCoordinator(DataUpdateCoordinator[ScanResult]):
                 await self.backup_store.async_prune(self.report_retention_days)
             except Exception:  # noqa: BLE001 - never let the review list break the scan
                 _LOGGER.exception("Could not update the Backups list")
+        if self.backup_notifier is not None and backup_reports:
+            # Backup failures found by the scan (unless already notified).
+            try:
+                self.backup_notifier.async_scan_problems(backup_reports)
+            except Exception:  # noqa: BLE001 - never let a notification break the scan
+                _LOGGER.exception("Could not notify the backup failures")
         if impact and self.restarts is not None and self.restarts.history is not None:
             # Each restart's messages, on the Restart history.
             try:
